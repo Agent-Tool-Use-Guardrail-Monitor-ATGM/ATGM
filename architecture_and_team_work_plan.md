@@ -2,7 +2,8 @@
 
 ## 1. System overview
 
-![alt text](image.png)
+<img width="460" height="522" alt="image" src="https://github.com/user-attachments/assets/af73dec6-6974-4698-8fde-c90cb6a95f91" />
+
 
 ## 2. Work split
 
