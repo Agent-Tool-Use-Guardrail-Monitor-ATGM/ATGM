@@ -48,8 +48,20 @@
   - Paper: Raab et al. (2020), Reactive Soft Prototype Computing for Concept Drift Streams, https://doi.org/10.1016/j.neucom.2019.11.111
 
 #### Agnes Biborka
+(At least 2 points out of 3.)
 
-- TBU
+- Real-time **allow-list policy check** on each tool call
+  - WASP Top 10 for LLM Applications, LLM06:2025 Excessive Agency https://docs.bytehide.com/products/radar/sast/owasp/llm06-2025
+  - CLAWGUARD: A RUNTIME SECURITY
+    FRAMEWORK FOR TOOL-AUGMENTED LLM
+    AGENTS AGAINST INDIRECT PROMPT INJECTION (https://arxiv.org/pdf/2604.11790)
+- Real-time **sequence-order check against the learned Markov model** (Batch 3)
+  - Statistical Learning for Anomaly Detection
+    in Cloud Server Systems: A Multi-Order
+    Markov Chain Framework (https://people.ece.ubc.ca/minchen/min_paper/2018/2018-IEEE-TCC-3-Zz.pdf)
+  - Anomaly detection of event sequences using multiple temporal resolutions and Markov chains (https://link.springer.com/article/10.1007/s10115-019-01365-y)
+- Distinguish **legitimate behavior drift from an actual attack**
+  - Unsupervised Incremental Learning with Dual Concept Drift Detection for Identifying Anomalous Sequences (https://arxiv.org/pdf/2403.03576)
 
 ## 3. Timeline
 
