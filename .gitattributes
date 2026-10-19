@@ -1,0 +1,5 @@
+# Shell scripts and files read by Linux containers must keep LF line endings
+*.sh text eol=lf
+platform/kafka/topics.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
