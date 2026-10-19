@@ -1,0 +1,12 @@
+# Kafka topics (DRAFT - align with the event schema in the Teams chat).
+# Add a line, then run: docker compose up kafka-init
+#
+# topic              partitions  cleanup   written by
+tool-calls.A         3           delete    agent-a (key = session_id)
+tool-calls.B         3           delete    agent-b (key = session_id)
+toolset-config       1           compact   scenario-generator (key = agent_id; keeps latest per agent)
+flags                3           delete    stream stages
+alerts               1           delete    stream stages
+review-queue         1           delete    stream stages
+labels               1           delete    review
+model-updates        1           compact   batch training (key = model name)
