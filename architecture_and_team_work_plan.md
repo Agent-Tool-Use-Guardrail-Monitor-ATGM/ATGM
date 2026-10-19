@@ -19,15 +19,14 @@
 
 #### Maxim Aleshkov
 
-- **Online-BLS — classifier, 2026**
+- **Online-BLS — classifier, 2026**: maps features into fixed random features; incrementally update output weights using Cholesky-based calculations.
   - Paper: C. Lei, G.-Z. Chen, C. L. P. Chen, T. Zhang. _An accurate and efficient online broad learning system for data stream classification_. Science China Information Sciences 69, 139101 (2026). [DOI](https://doi.org/10.1007/s11432-025-4673-5). [2025 author preprint](https://arxiv.org/abs/2501.16932).
-
-- **OPTWIN — retraining signal, 2024**
+- **OPTWIN — retraining signal, 2024**: compares error means/variances across selected subwindows using t/F tests.
   - Paper: M. D. L. Tosi, M. Theobald. _OPTWIN: Drift Identification with Optimal Sub-Windows_. ICDEW 2024, 331–337. [DOI](https://doi.org/10.1109/ICDEW61823.2024.00049).
 
 #### Fanni Orosz
 
-- **Sliding-window frequent item mining**
+- **Sliding-window frequent item mining**: similar to maintaining a rolling count of violations per tool/agent and alert on spikes.
   - https://link.springer.com/article/10.1007/s41019-017-0053-1
 - **Online Isolation Forest**
   - https://proceedings.mlr.press/v235/leveni24a.html
@@ -35,16 +34,16 @@
 
 #### Aron Papp Balazs
 
-- **DSPOT: alarm thresholds, 2017**
+- **DSPOT: alarm thresholds, 2017**: model the tail of the score stream with extreme value theory. Excesses over a high level `t` follow a Generalized Pareto Distribution (shape γ, scale σ), fitted by MLE using Grimshaw's 1-D root-finding trick.
   - Paper: A. Siffer, P.-A. Fouque, A. Termier, C. Largouët. _Anomaly Detection in Streams with Extreme Value Theory_. KDD 2017, 1067–1075.
-- **Adaptive Conformal Inference (ACI): triage, 2021**
+- **Adaptive Conformal Inference (ACI): triage, 2021**: turn classifier scores into prediction sets over {compliant, violating} with a target error rate α under distribution shift.
   - Paper: I. Gibbs, E. Candès. _Adaptive Conformal Inference Under Distribution Shift_. NeurIPS 2021.
 
 #### Asmar Bagirova
 
-- **Space-Saving**
+- **Space-Saving**: keeps approximate counts of frequent tools, argument patterns, and violation types using limited memory, supporting rolling counts and spike detection.
   - Paper: Zhao et al. (2022), SpaceSaving±, VLDB: https://doi.org/10.14778/3514061.3514068
-- **KSWIN**
+- **KSWIN**: monitors numeric features such as argument length, failure rate, or violation scores and detecting significant changes in agent behaviour. It could complement ADWIN, which would mainly monitor classifier errors using labels.
   - Paper: Raab et al. (2020), Reactive Soft Prototype Computing for Concept Drift Streams, https://doi.org/10.1016/j.neucom.2019.11.111
 
 #### Agnes Biborka
