@@ -39,7 +39,7 @@
 - **Adaptive Conformal Inference (ACI): triage, 2021**: turn classifier scores into prediction sets over {compliant, violating} with a target error rate α under distribution shift.
   - Paper: I. Gibbs, E. Candès. _Adaptive Conformal Inference Under Distribution Shift_. NeurIPS 2021.
 
-#### Asmar Bagirova
+#### Asmar Baghirova
 
 - **Space-Saving**: keeps approximate counts of frequent tools, argument patterns, and violation types using limited memory, supporting rolling counts and spike detection.
   - Paper: Zhao et al. (2022), SpaceSaving±, VLDB: https://doi.org/10.14778/3514061.3514068
