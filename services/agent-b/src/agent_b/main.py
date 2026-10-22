@@ -31,7 +31,13 @@ def main() -> None:
                 {"messages": [{"role": "user", "content": user_input}]}
             )
             last_message = result["messages"][-1]
-            print(f"\nAgent B: {last_message.content}")
+            content = last_message.content
+            if isinstance(content, list):
+                content = "".join(
+                    block.get("text", "") if isinstance(block, dict) else str(block)
+                    for block in content
+                )
+            print(f"\nAgent B: {content}")
         except Exception as exc:
             print(f"Request failed: {exc}")
 
