@@ -5,22 +5,22 @@ from agent_b.domain.agent import create_agent_b
 
 
 def main() -> None:
-    """Initialize Agent B and run a local interactive session."""
+    """Initialize Email Emilio and run a local interactive session."""
     load_dotenv()
 
     agent = create_agent_b()
 
-    print("Agent B is ready. Type 'exit' to quit.")
+    print("Email Emilio is ready. Type 'exit' to quit.")
 
     while True:
         try:
             user_input = input("\nYou: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nAgent B stopped.")
+            print("\nEmail Emilio stopped.")
             break
 
         if user_input.lower() in {"exit", "quit"}:
-            print("Agent B stopped.")
+            print("Email Emilio stopped.")
             break
 
         if not user_input:
@@ -37,7 +37,7 @@ def main() -> None:
                     block.get("text", "") if isinstance(block, dict) else str(block)
                     for block in content
                 )
-            print(f"\nAgent B: {content}")
+            print(f"\nEmail Emilio: {content}")
         except Exception as exc:
             print(f"Request failed: {exc}")
 
