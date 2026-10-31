@@ -67,7 +67,8 @@ def _roots(y: np.ndarray, lo: float, hi: float) -> list[float]:
         xs = np.geomspace(lo, hi, _GRID_POINTS)
     else:
         xs = -np.geomspace(-lo, -hi, _GRID_POINTS)
-    ws = np.array([_w(x, y) for x in xs])
+    s = 1.0 + np.outer(xs, y)                       # whole grid at once: (grid points) x (excesses)
+    ws = np.mean(1.0 / s, axis=1) * (1.0 + np.mean(np.log(s), axis=1)) - 1.0
     roots = []
     for a, b, wa, wb in zip(xs[:-1], xs[1:], ws[:-1], ws[1:]):
         if wa == 0.0:
