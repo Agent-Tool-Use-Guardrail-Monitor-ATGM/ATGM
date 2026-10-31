@@ -11,7 +11,7 @@ Turns a stream of anomaly scores (e.g. Online Isolation Forest, Markov "surprise
 - [x] Learning reviewer-confirmed false alarms (`SPOT.confirm_normal`)
 - [x] Drift-following DSPOT variant (`domain/dspot.py`)
 - [x] Offline evaluation runner (`evaluate.py`)
-- [ ] Kafka adapter
+- [x] Kafka service (`service.py`, `adapters/`, `main.py`) + demo (`demo.py`)
 
 ## How it works
 
@@ -32,6 +32,41 @@ python -m dspot.evaluate --csv scores.csv --column score --labels label --review
 ```
 
 The first `--init` scores (default 3000) calibrate the detector. With labels (1 = attack, 0 = normal) it prints precision, recall and the false-alarm rate on normal scores. `--review` simulates the review queue by confirming every false alarm. On the synthetic stream, DSPOT catches all 30 attacks with a 0.24% false-alarm rate. Plain SPOT flags 44% of the scores, because it cannot follow the drift.
+
+## Kafka service
+
+The service keeps one DSPOT per (agent, detector) score stream and runs this loop:
+
+```
+topic scores ──► dspot ──► topics alerts + review-queue
+topic labels ───┘          (reviewer verdict "false_alarm" → learned; "attack" → never learned)
+```
+
+Messages use Agent A's event envelope (`schema_version "1.0"`, body in `data`). The `data` per event type:
+
+| event_type | topic | data |
+|---|---|---|
+| `anomaly.scored` (read) | `scores` | `scored_event_id, agent_id, detector, model_version, score` (higher = more suspicious) |
+| `alarm.raised` (written) | `alerts`, `review-queue` | the fields above + `threshold, q` |
+| `review.labelled` (read) | `labels` | `scored_event_id, detector, verdict: "false_alarm" \| "attack"` |
+
+The `anomaly.scored` format is a proposal to the detector owners; only `adapters/events.py` changes if it does.
+
+Behaviour:
+- **Warm-up:** the first `DSPOT_WARMUP` scores of each stream (default 3000) calibrate it and raise no alarms. They must be normal: start each experiment with normal scenarios only.
+- **Late verdicts:** an alarm remembers the moving average at alarm time, so a verdict that arrives later is learned correctly. The last 10,000 unanswered alarms are remembered.
+- **Bad messages** are logged and skipped. **State** is in memory: after a restart every stream warms up again.
+
+Run it with the platform (from the repository root), then try the demo:
+
+```bash
+docker compose up -d --build              # includes the dspot service
+docker compose up kafka-init              # only if your stack existed before the scores topic was added
+docker compose logs -f dspot
+
+pip install -e ".[kafka]"                 # in services/stream-processing/dspot
+python -m dspot.demo                      # sends demo scores, then answers alarms as a simulated reviewer
+```
 
 ## Run the tests
 
