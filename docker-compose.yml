@@ -98,3 +98,9 @@ volumes:
   kafka-data:
   pg-data:
   grafana-data:
+
+# Named network "atgm": services from other repositories (e.g. datalens-agent) join it
+# to reach kafka:9092 by name. See README, "Connecting a service from another repository".
+networks:
+  default:
+    name: atgm

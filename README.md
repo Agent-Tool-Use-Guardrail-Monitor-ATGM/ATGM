@@ -20,6 +20,19 @@ docker compose down -v      # stop and delete all data
 | Kafka | `localhost:29092` from your PC, `kafka:9092` from containers |
 | PostgreSQL | `localhost:5432`; each service has its own database (see `infra/postgres/init.sh`) |
 
+## Connecting a service from another repository
+
+The platform runs on a Docker network named `atgm`. A service in a separate repository (for example `datalens-agent`) joins it by adding this to its own compose file, and then reaches Kafka at `kafka:9092`:
+
+```yaml
+networks:
+  default:
+    name: atgm
+    external: true
+```
+
+Start the ATGM platform first (`docker compose up -d` here), then the other repository's services.
+
 ## Repository layout
 
 ```
