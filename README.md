@@ -36,15 +36,25 @@ Start the ATGM platform first (`docker compose up -d` here), then the other repo
 ## Repository layout
 
 ```
-docker-compose.yml          everything that runs; add your service here
+docker-compose.yml          shared platform: Kafka, PostgreSQL, Grafana
 infra/                      Kafka topics, database setup, Grafana connection
 services/
-  agent-a/                  Maxim, Asmar
-  agent-b/                  Fanni, Ági
+  agent-a/                  pointer only: Agent A lives in its own repository (see below)
+  agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
   scenario-generator/       Áron
   stream-processing/        one subfolder per member's algorithms
 docs/                       design documents and figures
 ```
+
+### Team repositories
+
+| Repository | Contents | Owners |
+|---|---|---|
+| [ATGM](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/ATGM) (this one) | Shared platform, Agent B, scenario generator, stream processing, docs | all |
+| [datalens-agent](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent) | Agent A, statistics/calculator agent (FastAPI + CrewAI) | Maxim, Asmar |
+| [datalens-identity](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-identity) | User login (Keycloak) for the agents | Maxim |
+
+Work happens on the `development` branch: create a feature branch from it and open a pull request into `development`.
 
 ## Team rules
 

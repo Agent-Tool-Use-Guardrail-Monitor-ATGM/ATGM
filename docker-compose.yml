@@ -84,15 +84,16 @@ services:
       postgres:
         condition: service_healthy
 
-  # Services are added here as they are built, e.g.:
-  # agent-a:
-  #   build: ./services/agent-a
+  # Services in this repository are added here as they are built, e.g.:
+  # agent-b:
+  #   build: ./services/agent-b
   #   environment:
   #     KAFKA_BOOTSTRAP: kafka:9092
-  #     DATABASE_URL: postgresql://agent_a_svc:${SERVICE_DB_PASSWORD}@postgres:5432/agent_a_db
+  #     DATABASE_URL: postgresql://agent_b_svc:${SERVICE_DB_PASSWORD}@postgres:5432/agent_b_db
   #   depends_on:
   #     kafka-init:
   #       condition: service_completed_successfully
+  # Services in other repositories (e.g. datalens-agent) join the "atgm" network instead.
 
 volumes:
   kafka-data:
