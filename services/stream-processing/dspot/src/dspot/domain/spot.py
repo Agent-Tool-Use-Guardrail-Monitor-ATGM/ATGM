@@ -15,6 +15,9 @@ underestimate of the tail are never seen, so the threshold can stay too low. On 
 and heavy-tailed test streams this gives roughly 2-3x the requested false-alarm rate:
 SPOT errs on the cautious side. Learning from every score would fix the accuracy, but
 would let attackers push the threshold up by sending high scores (poisoning).
+The middle way is `confirm_normal`: alarms that a reviewer (the ATGM review queue)
+marks as false alarms are learned, real attacks never are. With that feedback the
+false-alarm rate returns close to q.
 """
 from __future__ import annotations
 
@@ -97,6 +100,22 @@ class SPOT:
             self._refit()
             return Decision(x, z, Kind.PEAK)
         return Decision(x, z, Kind.NORMAL)
+
+    def confirm_normal(self, score: float) -> None:
+        """Learn an alarm that a reviewer confirmed as a false alarm.
+
+        Only reviewed scores reach the model this way, so the cautious bias above is
+        corrected without letting unreviewed (possibly malicious) scores raise the threshold.
+        """
+        if self.threshold is None:
+            raise RuntimeError("call initialize() before confirm_normal()")
+        x = float(score)
+        if not np.isfinite(x):
+            raise ValueError("score must be finite")
+        self.n += 1
+        if x > self.t:
+            self._peaks.append(x - self.t)
+            self._refit()
 
     def run(self, scores) -> list[Decision]:
         return [self.update(s) for s in scores]
