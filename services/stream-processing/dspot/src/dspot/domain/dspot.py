@@ -72,18 +72,20 @@ class DSPOT:
             self._push(x)
         return Decision(x, mean + d.threshold, d.kind)
 
-    def confirm_normal(self, score: float) -> None:
+    def confirm_normal(self, score: float, local_mean: float | None = None) -> None:
         """Learn an alarm that a reviewer confirmed as a false alarm.
 
-        Call it right after the `update` that raised the alarm: the deviation is
-        measured from the same local mean that alarm used.
+        The deviation is measured from `local_mean`, the moving average at the time of
+        the alarm. Reviewers answer late, after the window has moved on, so pass the
+        value saved with the alarm; without it the current average is used.
         """
         if self.spot.threshold is None:
             raise RuntimeError("call initialize() before confirm_normal()")
         x = float(score)
         if not np.isfinite(x):
             raise ValueError("score must be finite")
-        self.spot.confirm_normal(x - self.local_mean)
+        mean = self.local_mean if local_mean is None else float(local_mean)
+        self.spot.confirm_normal(x - mean)
         self._push(x)
 
     def run(self, scores) -> list[Decision]:
