@@ -9,7 +9,7 @@ Turns a stream of anomaly scores (e.g. Online Isolation Forest, Markov "surprise
 - [x] GPD fit with Grimshaw's method (`domain/gpd.py`)
 - [x] Streaming SPOT threshold updates (`domain/spot.py`)
 - [x] Learning reviewer-confirmed false alarms (`SPOT.confirm_normal`)
-- [ ] Drift-following DSPOT variant
+- [x] Drift-following DSPOT variant (`domain/dspot.py`)
 - [ ] Offline evaluation runner
 - [ ] Kafka adapter
 
@@ -20,6 +20,8 @@ Scores above a high level `t` ("peaks") are modelled by a Generalized Pareto Dis
 `SPOT` calibrates `t`, the GPD and `z_q` on an initial batch, then classifies each new score as an alarm (not learned), a peak (learned, threshold refitted) or normal. Measured on synthetic streams, it raises about 2-3x the requested false-alarm rate. The reason: excluded alarms hide the scores that would correct an early underestimate of the tail (see the docstring in `spot.py`).
 
 `confirm_normal(score)` fixes this safely: when a reviewer (the ATGM review queue) marks an alarm as a false alarm, the score is learned like a normal one. Unreviewed alarms and confirmed attacks are never learned, so attackers cannot push the threshold up. With this feedback the measured false-alarm rate is 0.75-1.25x `q`.
+
+`DSPOT` follows drift: it keeps the mean of the last `depth` normal scores and runs SPOT on each score's deviation from that mean, so the threshold moves with a slowly shifting normal level. Alarms do not enter the window. In the tests the level climbs by 15 standard deviations. Plain SPOT then flags over 90% of the late scores, while DSPOT stays at 1.8-2.7x `q` (0.7-1.1x `q` with review feedback). Decisions report the threshold in raw score units.
 
 ## Run the tests
 
