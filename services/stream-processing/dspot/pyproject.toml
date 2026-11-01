@@ -1,0 +1,22 @@
+[project]
+name = "dspot"
+version = "0.1.0"
+description = "DSPOT: streaming alarm thresholds from extreme value theory (ATGM stream mining)"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+
+[project.optional-dependencies]
+kafka = ["confluent-kafka>=2.4"]                  # only for the Kafka service and demo
+plot = ["matplotlib>=3.8"]                       # only for the evaluation plots
+test = ["pytest>=8", "scipy>=1.11", "matplotlib>=3.8"]   # SciPy is only an independent reference in tests
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
