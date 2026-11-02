@@ -3,6 +3,16 @@ from dotenv import load_dotenv
 
 from agent_b.domain.agent import create_agent_b
 
+import time
+from pathlib import Path
+
+LOG_FILE = Path("tool_calls.log")
+
+def log(kind: str, msg: str) -> None:
+    line = f"[{time.strftime('%H:%M:%S')}] {kind:<7} {msg}"
+    print(line, flush=True)
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
 
 def main() -> None:
     """Initialize Email Emilio and run a local interactive session."""
