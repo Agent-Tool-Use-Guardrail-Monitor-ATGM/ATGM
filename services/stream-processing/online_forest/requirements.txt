@@ -1,0 +1,6 @@
+river
+pytest
+capymoa==0.11.0
+numpy
+torch
+confluent-kafka
