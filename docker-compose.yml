@@ -94,7 +94,15 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
-
+  online-forest:
+    build: ./services/stream-processing/online_forest
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: online-forest-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
   # Services are added here as they are built, e.g.:
   # agent-a:
   #   build: ./services/agent-a
