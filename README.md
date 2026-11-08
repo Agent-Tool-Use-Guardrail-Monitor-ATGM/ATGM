@@ -33,6 +33,16 @@ networks:
 
 Start the ATGM platform first (`docker compose up -d` here), then the other repository's services.
 
+## Running on the shared server
+
+All ports are published on `127.0.0.1` only, so Kafka, PostgreSQL, kafka-ui (which has no login) and Grafana are not reachable from the network. From your PC, open an SSH tunnel and use the usual `localhost` addresses while it is open:
+
+```bash
+ssh -L 8080:localhost:8080 -L 3000:localhost:3000 -L 29092:localhost:29092 <user>@<server>
+```
+
+All platform services restart automatically after a server reboot (`restart: unless-stopped`).
+
 ## Repository layout
 
 ```
