@@ -84,6 +84,27 @@ services:
       postgres:
         condition: service_healthy
 
+  dspot:                                   # DSPOT alarm thresholds (services/stream-processing/dspot)
+    build: ./services/stream-processing/dspot
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      DSPOT_Q: "0.001"                     # false-alarm probability on normal scores
+      DSPOT_WARMUP: "3000"                 # normal scores per (agent, detector) before alarms start
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  online-forest:
+    build: ./services/stream-processing/online_forest
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: online-forest-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   # Services in this repository are added here as they are built, e.g.:
   # agent-b:
   #   build: ./services/agent-b
