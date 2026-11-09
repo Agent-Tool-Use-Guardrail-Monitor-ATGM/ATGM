@@ -60,4 +60,4 @@ def save_draft(to: str, subject: str, body: str) -> str:
     path.write_text(f"To: {to}\nSubject: {subject}\n\n{body}\n", encoding="utf-8")
     return f"Draft saved to {path}"
 
-TOOLS = [find_contact, get_current_datetime, get_free_slots, save_draft]
+DRAFTING_TOOLS = [find_contact, get_current_datetime, get_free_slots, save_draft]
