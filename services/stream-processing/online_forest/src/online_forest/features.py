@@ -1,4 +1,5 @@
 from typing import Any
+from .events import payload
 
 FEATURE_NAMES = [
     "duration_ms",
@@ -9,15 +10,15 @@ FEATURE_NAMES = [
     "success",
 ]
 
-
 def extract_features(event: dict[str, Any]) -> list[float]:
-    arguments = event.get("arguments", {})
+    p = payload(event)
+    arguments = p.get("arguments") or {}
 
     return [
-        float(event.get("duration_ms", 0)),
+        float(p.get("duration_ms", 0)),
         float(len(arguments)),
         float(len(str(arguments))),
-        float(event.get("session_call_index", 0)),
-        float(event.get("time_since_previous_call_ms", 0)),
-        1.0 if event.get("success", True) else 0.0,
+        float(p.get("session_call_index", 0)),
+        float(p.get("time_since_previous_call_ms", 0)),
+        1.0 if p.get("success", True) else 0.0,
     ]
