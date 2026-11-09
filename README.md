@@ -52,6 +52,7 @@ services/
   agent-a/                  pointer only: Agent A lives in its own repository (see below)
   agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
   scenario-generator/       Áron
+  mocks/                    temporary stand-ins for agents and detectors (Áron)
   stream-processing/        one subfolder per member's algorithms
 docs/                       design documents and figures
 ```
