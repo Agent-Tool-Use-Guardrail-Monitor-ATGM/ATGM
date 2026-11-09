@@ -24,7 +24,7 @@ ACI (decision.made,   ├─► review-queue ─► review queue ─► labels �
 
 ## Messages
 
-Input: `alarm.raised`, or `decision.made` with `decision: "review"`. The envelope's `session_id` must be the session of the scored tool call.
+Input: `alarm.raised`, or `decision.made` with `decision: "review"` or `audit: true` (ACI's random audits of pass/flag decisions). The envelope's `session_id` must be the session of the scored tool call.
 
 Output, on `labels` (Agent A's envelope, `schema_version "1.0"`):
 

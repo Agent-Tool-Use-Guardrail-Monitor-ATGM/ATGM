@@ -1,8 +1,8 @@
 """Review queue with a simulated reviewer (pure Python, time is passed in).
 
-Items arrive from the `review-queue` topic: `alarm.raised` (DSPOT) or `decision.made` with
-decision "review" (ACI). The simulated reviewer answers each item after `delay` seconds,
-using the scenario ground truth:
+Items arrive from the `review-queue` topic: `alarm.raised` (DSPOT) or `decision.made` (ACI)
+with decision "review" or marked as a random audit (`audit: true`). The simulated reviewer
+answers each item after `delay` seconds, using the scenario ground truth:
 
     session was an attack  -> verdict "attack", violation_type = the attack type
     session was normal     -> verdict "false_alarm"
@@ -49,8 +49,8 @@ def parse_item(msg: dict) -> Item | None:
     data = msg.get("data")
     if not isinstance(data, dict):
         raise ValueError("message has no data object")
-    if kind == "decision.made" and data.get("decision") != "review":
-        return None
+    if kind == "decision.made" and data.get("decision") != "review" and data.get("audit") is not True:
+        return None                                   # pass / flag decisions are reviewed only as audits
     if kind not in ("alarm.raised", "decision.made"):
         return None
     try:
