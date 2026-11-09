@@ -1,56 +1,60 @@
+"""Main entry point for running the email drafting agent."""
+from __future__ import annotations
 
-from dotenv import load_dotenv
+import argparse
 
 from agent_b.domain.agent import create_agent_b
-
-import time
-from pathlib import Path
-
-LOG_FILE = Path("tool_calls.log")
-
-def log(kind: str, msg: str) -> None:
-    line = f"[{time.strftime('%H:%M:%S')}] {kind:<7} {msg}"
-    print(line, flush=True)
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(line + "\n")
+from agent_b.adapters.tool_call_logger import log_tool_trace, TOOL_LOGS_DIR
 
 def main() -> None:
-    """Initialize Email Emilio and run a local interactive session."""
-    load_dotenv()
+    parser = argparse.ArgumentParser(description="Email drafting assistant agent")
+    parser.add_argument("--model", default="qwen3:1.7b", help="Installed Ollama model") # qwen2.5:1.5b, qwen3:1.7b
+    parser.add_argument("--prompt", help="One question; otherwise interactive mode")
+    args = parser.parse_args()
 
-    agent = create_agent_b()
+    print(f"Model: {args.model}")
 
-    print("Email Emilio is ready. Type 'exit' to quit.")
+    agent = create_agent_b(args.model)
+    
+    TOOL_LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    session_id = 0
+    
+    print("\nThe email drafting assistant agent has started.")
 
-    while True:
-        try:
-            user_input = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\nEmail Emilio stopped.")
-            break
-
-        if user_input.lower() in {"exit", "quit"}:
-            print("Email Emilio stopped.")
-            break
-
-        if not user_input:
-            continue
-
+    def user_prompt(session_id: int, prompt: str) -> None:
         try:
             result = agent.invoke(
-                {"messages": [{"role": "user", "content": user_input}]}
+                {"messages": [{"role": "user", "content": prompt}]},
+                config={"recursion_limit": 14},
             )
-            last_message = result["messages"][-1]
-            content = last_message.content
-            if isinstance(content, list):
-                content = "".join(
-                    block.get("text", "") if isinstance(block, dict) else str(block)
-                    for block in content
-                )
-            print(f"\nEmail Emilio: {content}")
         except Exception as exc:
-            print(f"Request failed: {exc}")
+            print(f"Agent error: {type(exc).__name__}: {exc}")
+            print("Check that Ollama is running and the requested model is installed.")
+            return
+        
+        log_tool_trace(session_id, result["messages"])
+        
+        print(f"\nAgent's answer > {result["messages"][-1].content}")    
+
+    if args.prompt:
+        user_prompt(session_id, args.prompt)
+    else:
+        print("\nDescribe what email you'd like the agent to draft, or 'quit' to exit.")
+        while True:
+            try:
+                q = input("\nUser prompt > ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print("\nThe email drafting assistant agent has stopped.")
+                break
+            if q.lower() in {"quit", "exit", "q"}:
+                print("\nThe email drafting assistant agent has stopped.")
+                break
+            if q:
+                user_prompt(session_id, q)
+                session_id += 1
 
 
 if __name__ == "__main__":
     main()
+    
