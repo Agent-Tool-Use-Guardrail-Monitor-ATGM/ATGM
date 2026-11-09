@@ -110,6 +110,39 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  # Temporary stand-ins (services/mocks) until the real agents and detectors publish to Kafka.
+  # Started only with:  docker compose --profile mocks up -d
+  mock-agents:
+    build: ./services/mocks
+    command: ["python", "-m", "atgm_mocks.run_agents"]
+    profiles: ["mocks"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      SESSIONS_PER_SECOND: "5"
+      WARMUP_SESSIONS: "1000"              # normal-only sessions per agent before attacks start
+      ATTACK_RATE: "0.05"
+      DB_HOST: postgres
+      DB_NAME: scenario_db
+      DB_USER: scenario_svc
+      DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mock-scorer:
+    build: ./services/mocks
+    command: ["python", "-m", "atgm_mocks.run_scorer"]
+    profiles: ["mocks"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   # Services in this repository are added here as they are built, e.g.:
   # agent-b:
   #   build: ./services/agent-b
