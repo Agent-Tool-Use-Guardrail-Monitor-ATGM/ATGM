@@ -72,6 +72,8 @@ def test_parse_item_accepts_alarms_and_review_decisions_only():
     assert parse_item(review) is not None
     flag = {**review, "data": {**review["data"], "decision": "flag"}}
     assert parse_item(flag) is None
+    audit = {**flag, "data": {**flag["data"], "audit": True}}
+    assert parse_item(audit) is not None                 # random audits of pass/flag decisions
     assert parse_item({"event_type": "other", "data": {}}) is None
     with pytest.raises(ValueError):
         parse_item({"event_type": "alarm.raised", "data": {"detector": "x"}, "session_id": "s"})
