@@ -56,3 +56,10 @@ Dockerfile
 
 
 **Owners:** Fanni, Ági
+
+
+## Learning materials:
+- https://github.com/shaiqbhatti85/langchain-ollama-tool-agent
+- https://medium.com/data-science/building-a-simple-agent-with-tools-and-toolkits-in-langchain-77e0f9bd1fa5
+- https://www.scribd.com/document/893740609/Guide-How-to-Build-an-Agent
+- https://www.langchain.com/blog/tool-calling-with-langchain

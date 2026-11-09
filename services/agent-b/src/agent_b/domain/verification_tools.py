@@ -1,4 +1,4 @@
-"""Quality and safety tools for Email Emilio.
+"""Quality and safety tools exposed to the LLM.
  
 Both tools are deterministic (regex / rule based): no extra LLM call, so they
 are fast, free, repeatable, and work well even with small local models.
@@ -560,3 +560,5 @@ def sensitive_content_scan(
         "findings": findings,
         "redacted_text": redacted,
     }
+
+VERIFICATION_TOOLS = [tone_checker, sensitive_content_scan]
