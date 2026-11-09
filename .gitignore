@@ -224,3 +224,4 @@ __marimo__/
 .env
 __pycache__/
 *.pyc
+services/agent-b/src/logs/
