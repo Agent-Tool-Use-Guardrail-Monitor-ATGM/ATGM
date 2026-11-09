@@ -53,6 +53,7 @@ services/
   agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
   scenario-generator/       Áron
   mocks/                    temporary stand-ins for agents and detectors (Áron)
+  review-queue/             review queue with a simulated reviewer (Áron)
   stream-processing/        one subfolder per member's algorithms
 docs/                       design documents and figures
 ```
