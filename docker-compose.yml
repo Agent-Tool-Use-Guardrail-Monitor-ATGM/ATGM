@@ -127,6 +127,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  storage-sink:                            # copies all Kafka events into analytics_db (services/storage-sink)
+    build: ./services/storage-sink
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      DB_HOST: postgres
+      DB_NAME: analytics_db                # Grafana reads this database (read-only)
+      DB_USER: analytics_svc
+      DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Temporary stand-ins (services/mocks) until the real agents and detectors publish to Kafka.
   # Started only with:  docker compose --profile mocks up -d
   mock-agents:

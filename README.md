@@ -54,6 +54,7 @@ services/
   scenario-generator/       Áron
   mocks/                    temporary stand-ins for agents and detectors (Áron)
   review-queue/             review queue with a simulated reviewer (Áron)
+  storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
   stream-processing/        one subfolder per member's algorithms
 docs/                       design documents and figures
 ```
