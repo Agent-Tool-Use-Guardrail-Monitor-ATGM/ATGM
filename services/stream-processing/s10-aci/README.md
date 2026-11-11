@@ -63,7 +63,7 @@ Configuration is through environment variables: see `main.py`.
 ## Run the evaluation and tests
 
 ```bash
-cd services/stream-processing/aci
+cd services/stream-processing/s10-aci
 pip install -e ".[test]"
 pytest
 python -m aci.evaluate --drift --plot aci.png

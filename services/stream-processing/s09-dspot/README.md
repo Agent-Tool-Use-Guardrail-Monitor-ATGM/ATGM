@@ -174,14 +174,14 @@ docker compose up -d --build              # includes the dspot service
 docker compose up kafka-init              # only if your stack existed before the scores topic was added
 docker compose logs -f dspot
 
-pip install -e ".[kafka]"                 # in services/stream-processing/dspot
+pip install -e ".[kafka]"                 # in services/stream-processing/s09-dspot
 python -m dspot.demo                      # DSPOT alone: sends demo scores, then answers each alarm as a simulated reviewer
 ```
 
 ## Run the tests
 
 ```bash
-cd services/stream-processing/dspot
+cd services/stream-processing/s09-dspot
 python -m venv .venv
 .venv\Scripts\activate            # Windows (macOS/Linux: source .venv/bin/activate)
 pip install -e ".[test]"         # includes matplotlib for the plot test
