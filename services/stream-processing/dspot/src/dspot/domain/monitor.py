@@ -7,8 +7,11 @@ This is the application logic of the DSPOT service, still without Kafka:
 - Warm-up: the first `warmup` scores of a stream calibrate its DSPOT and never raise
   alarms. They are assumed to be normal (run the scenario generator with normal tasks
   only at the start).
-- Alarms are remembered until a reviewer answers. A "false alarm" verdict is learned
-  with the moving average saved at alarm time; an "attack" verdict is never learned.
+- Alarms are remembered per session until a reviewer judges that session. The review queue
+  is fed by ACI (one item per session), not by DSPOT, so an alarm flood cannot swamp the
+  reviewers. A session verdict "normal" (false alarm) means every call in it was normal: all
+  of the session's pending alarms are learned, with the moving average saved at alarm time.
+  A verdict "attack" says some call was bad but not which, so nothing is learned.
 """
 from __future__ import annotations
 
@@ -27,6 +30,7 @@ class Score:
     agent_id: str
     detector: str
     value: float        # higher = more suspicious
+    session_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,14 +42,14 @@ class Alarm:
 
 @dataclass(frozen=True)
 class Verdict:
-    ref: str
-    detector: str
-    false_alarm: bool
+    session_id: str
+    false_alarm: bool   # True: the reviewer judged the whole session normal
 
 
 class AlarmMonitor:
     def __init__(self, q: float = 1e-3, level: float = 0.98, depth: int = 20,
                  warmup: int = 3_000, max_pending: int = 10_000) -> None:
+        """max_pending: sessions with unanswered alarms that are remembered (oldest forgotten)."""
         DSPOT(q=q, level=level, depth=depth)          # validate the parameters early
         if warmup <= depth:
             raise ValueError("warmup must be larger than depth")
@@ -55,8 +59,8 @@ class AlarmMonitor:
         self.detectors: dict[tuple[str, str], DSPOT] = {}
         self._warming: dict[tuple[str, str], deque[float]] = {}
         self._since_attempt: dict[tuple[str, str], int] = {}
-        # (ref, detector) -> (stream key, score, moving average at alarm time)
-        self._pending: OrderedDict[tuple[str, str], tuple[tuple[str, str], float, float]] = OrderedDict()
+        # session -> [(stream key, score, moving average at alarm time), ...]
+        self._pending: OrderedDict[str, list[tuple[tuple[str, str], float, float]]] = OrderedDict()
 
     def on_score(self, s: Score) -> Alarm | None:
         if not math.isfinite(s.value):
@@ -69,19 +73,21 @@ class AlarmMonitor:
         decision = dspot.update(s.value)
         if not decision.alarm:
             return None
-        self._pending[(s.ref, s.detector)] = (key, s.value, dspot.local_mean)
-        if len(self._pending) > self.max_pending:
-            self._pending.popitem(last=False)         # forget the oldest unanswered alarm
+        if s.session_id is not None:
+            self._pending.setdefault(s.session_id, []).append((key, s.value, dspot.local_mean))
+            self._pending.move_to_end(s.session_id)
+            if len(self._pending) > self.max_pending:
+                self._pending.popitem(last=False)     # forget the oldest unanswered session
         return Alarm(s, decision.threshold, self.q)
 
-    def on_verdict(self, v: Verdict) -> bool:
-        """Apply a reviewer verdict; True if the score was learned as normal."""
-        pending = self._pending.pop((v.ref, v.detector), None)
-        if pending is None or not v.false_alarm:
-            return False
-        key, value, mean = pending
-        self.detectors[key].confirm_normal(value, local_mean=mean)
-        return True
+    def on_verdict(self, v: Verdict) -> int:
+        """Apply a reviewer's session verdict; returns the number of alarms learned as normal."""
+        pending = self._pending.pop(v.session_id, [])
+        if not v.false_alarm:
+            return 0
+        for key, value, mean in pending:
+            self.detectors[key].confirm_normal(value, local_mean=mean)
+        return len(pending)
 
     def status(self) -> dict[str, str]:
         out = {f"{a}/{d}": f"warming up {len(b)}/{self.warmup}" for (a, d), b in self._warming.items()}

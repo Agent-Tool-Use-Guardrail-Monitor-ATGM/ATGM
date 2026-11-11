@@ -36,17 +36,40 @@ def test_alarms_and_reviewer_verdicts():
     feed(m, np.random.default_rng(2).normal(size=3_000))
     dspot = m.detectors[("A", "iforest")]
 
-    alarm = m.on_score(Score("x1", "A", "iforest", 9.0))
+    alarm = m.on_score(Score("x1", "A", "iforest", 9.0, session_id="s1"))
     assert alarm is not None and alarm.threshold < 9.0 and alarm.q == 1e-3
     n_peaks = dspot.spot.n_peaks
-    assert m.on_verdict(Verdict("x1", "iforest", false_alarm=True))
+    assert m.on_verdict(Verdict("s1", false_alarm=True)) == 1
     assert dspot.spot.n_peaks == n_peaks + 1              # learned
-    assert not m.on_verdict(Verdict("x1", "iforest", false_alarm=True))   # only once
+    assert m.on_verdict(Verdict("s1", false_alarm=True)) == 0     # only once
 
-    m.on_score(Score("x2", "A", "iforest", 12.0))
-    assert not m.on_verdict(Verdict("x2", "iforest", false_alarm=False))  # attack: not learned
+    m.on_score(Score("x2", "A", "iforest", 12.0, session_id="s2"))
+    assert m.on_verdict(Verdict("s2", false_alarm=False)) == 0    # attack: not learned
     assert dspot.spot.n_peaks == n_peaks + 1
-    assert not m.on_verdict(Verdict("unknown", "iforest", false_alarm=True))
+    assert m.on_verdict(Verdict("unknown", false_alarm=True)) == 0
+
+
+def test_a_normal_session_verdict_teaches_all_its_alarms_across_detectors():
+    m = AlarmMonitor(q=1e-3, warmup=3_000)
+    rng = np.random.default_rng(6)
+    feed(m, rng.normal(size=3_000), detector="iforest")
+    feed(m, rng.normal(size=3_000), detector="markov")
+    a, b = m.detectors[("A", "iforest")], m.detectors[("A", "markov")]
+    pa, pb = a.spot.n_peaks, b.spot.n_peaks
+    m.on_score(Score("x1", "A", "iforest", 8.0, session_id="s"))
+    m.on_score(Score("x2", "A", "iforest", 9.0, session_id="s"))
+    m.on_score(Score("x3", "A", "markov", 7.0, session_id="s"))
+    m.on_score(Score("y", "A", "iforest", 9.5, session_id="other"))
+    assert m.on_verdict(Verdict("s", false_alarm=True)) == 3
+    assert (a.spot.n_peaks, b.spot.n_peaks) == (pa + 2, pb + 1)
+    assert "other" in m._pending                           # other sessions keep waiting
+
+
+def test_alarms_without_a_session_are_never_learned():
+    m = AlarmMonitor(q=1e-3, warmup=3_000)
+    feed(m, np.random.default_rng(7).normal(size=3_000))
+    assert m.on_score(Score("x", "A", "iforest", 9.0)) is not None
+    assert m._pending == {}
 
 
 def test_late_verdict_uses_the_moving_average_of_the_alarm_time():
@@ -54,12 +77,12 @@ def test_late_verdict_uses_the_moving_average_of_the_alarm_time():
     rng = np.random.default_rng(3)
     feed(m, rng.normal(size=3_000))
     dspot = m.detectors[("A", "iforest")]
-    m.on_score(Score("x", "A", "iforest", 9.0))
+    m.on_score(Score("x", "A", "iforest", 9.0, session_id="s"))
     mean_then = dspot.local_mean
     feed(m, rng.normal(loc=2.0, size=200), start=5_000)  # level moves before the reviewer answers
     assert dspot.local_mean > mean_then + 1
     peaks_before = list(dspot.spot._peaks)
-    m.on_verdict(Verdict("x", "iforest", false_alarm=True))
+    m.on_verdict(Verdict("s", false_alarm=True))
     assert dspot.spot._peaks[len(peaks_before)] == pytest.approx(9.0 - mean_then - dspot.spot.t)
 
 
@@ -67,10 +90,10 @@ def test_unanswered_alarms_are_bounded():
     m = AlarmMonitor(q=1e-3, warmup=3_000, max_pending=5)
     feed(m, np.random.default_rng(4).normal(size=3_000))
     for i in range(8):
-        m.on_score(Score(f"x{i}", "A", "iforest", 20.0))
+        m.on_score(Score(f"x{i}", "A", "iforest", 20.0, session_id=f"s{i}"))
     assert len(m._pending) == 5
-    assert not m.on_verdict(Verdict("x0", "iforest", false_alarm=True))   # oldest forgotten
-    assert m.on_verdict(Verdict("x7", "iforest", false_alarm=True))
+    assert m.on_verdict(Verdict("s0", false_alarm=True)) == 0     # oldest session forgotten
+    assert m.on_verdict(Verdict("s7", false_alarm=True)) == 1
 
 
 def test_constant_scores_keep_warming_up_without_crashing():
