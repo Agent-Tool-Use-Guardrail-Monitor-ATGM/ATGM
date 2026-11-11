@@ -11,12 +11,12 @@ Everything is in two files:
 
 - Azure CLI, logged in (`az login`), with the Azure for Students subscription. Check with `./atgm-azure.sh check`.
 - An SSH key at `~/.ssh/id_ed25519.pub`. If you don't have one: `ssh-keygen -t ed25519`.
-- Git Bash on Windows, or any Linux/macOS shell. Run the commands from `infra/azure/`.
+- Git Bash on Windows, or any Linux/macOS shell. Run the commands from `deploy/azure/`.
 
 ## Typical session
 
 ```bash
-cd infra/azure
+cd deploy/azure
 ./atgm-azure.sh create     # once: VM + first-boot setup (~10-15 min until the stack runs)
 ./atgm-azure.sh ready      # shows the containers when the setup is done
 ./atgm-azure.sh tunnel     # keep open; then http://localhost:8080 (kafka-ui), http://localhost:3000 (Grafana)
