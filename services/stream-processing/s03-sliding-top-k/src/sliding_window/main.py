@@ -1,3 +1,9 @@
+"""S03 service: python -m sliding_window.main
+
+Environment variables (default):
+    KAFKA_BOOTSTRAP (localhost:29092), KAFKA_GROUP_ID (sliding-top-k)
+    TOPK_K (3), TOPK_NODES (3), TOPK_SLOT_SECONDS (30), TOPK_UNITS (20), TOPK_EPSILON (5)
+"""
 import json
 import logging
 import os
@@ -8,6 +14,8 @@ from confluent_kafka import Consumer, Producer
 
 from sliding_window.domain.violations import ToolCallMemory, ViolationReader
 from sliding_window.service import Settings, TopKService
+
+INPUT_TOPICS = ["tool-calls.A", "tool-calls.B", "alerts", "flags"]
 
 
 def setting(name, default):
@@ -28,28 +36,19 @@ def main():
         nodes=int(setting("TOPK_NODES", "3")),
         slot_seconds=float(setting("TOPK_SLOT_SECONDS", "30")),
         units=int(setting("TOPK_UNITS", "20")),
-        epsilon=float(setting("TOPK_EPSILON", "1")),
-        stats_every=float(setting("STATS_EVERY", "60")),
+        epsilon=float(setting("TOPK_EPSILON", "5")),
     )
-    sources = setting("SOURCES", "alarms").split(",")
-    flag_types = setting("FLAG_TYPES", "violation.flagged").split(",") if "flags" in sources else []
-    service = TopKService(settings, ViolationReader(ToolCallMemory(), flag_types))
-
-    topics = ["tool-calls.A", "tool-calls.B"]
-    if "alarms" in sources:
-        topics.append(settings.alert_topic)
-    if "flags" in sources:
-        topics.append(settings.flag_topic)
+    service = TopKService(settings, ViolationReader(ToolCallMemory()))
 
     bootstrap = setting("KAFKA_BOOTSTRAP", "localhost:29092")
     consumer = Consumer({
         "bootstrap.servers": bootstrap,
-        "group.id": setting("KAFKA_GROUP_ID", "sliding-window-topk"),
-        "auto.offset.reset": setting("OFFSET_RESET", "latest"),   # live monitor: start from now
+        "group.id": setting("KAFKA_GROUP_ID", "sliding-top-k"),
+        "auto.offset.reset": "latest",       # live monitor: start from now, not from old events
     })
     producer = Producer({"bootstrap.servers": bootstrap})
-    consumer.subscribe(topics)
-    log.info("P4 top-k service started: %s", topics)
+    consumer.subscribe(INPUT_TOPICS)
+    log.info("S03 sliding top-k started: %s -> scores, stats", INPUT_TOPICS)
 
     try:
         while True:
