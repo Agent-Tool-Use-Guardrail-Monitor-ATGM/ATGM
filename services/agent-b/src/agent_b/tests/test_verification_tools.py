@@ -1,5 +1,4 @@
-from agent_b.domain.tools import sensitive_content_scan, tone_checker
-
+from agent_b.domain.verification_tools import *
 
 def test_scan_blocks_password_and_masks_it():
     result = sensitive_content_scan.invoke(
