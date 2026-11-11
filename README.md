@@ -55,7 +55,8 @@ services/
   mocks/                    temporary stand-ins for agents and detectors (Áron)
   review-queue/             review queue with a simulated reviewer (Áron)
   storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
-  stream-processing/        one subfolder per member's algorithms
+  stream-processing/        stream stages S01-S10, two per member (see its README)
+  batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining (placeholders)
 docs/                       design documents and figures
 ```
 
