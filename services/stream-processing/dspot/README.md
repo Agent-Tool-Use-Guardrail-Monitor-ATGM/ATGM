@@ -4,25 +4,112 @@
 
 Turns a stream of anomaly scores (e.g. Online Isolation Forest, Markov "surprise") into alarms with a chosen false-alarm probability `q`, without labels, and follows drift in the scores.
 
-## In plain words
+## DSPOT explained
 
-**The question.** A detector gives every tool call a suspicion score. When is a score "too high"? A fixed line does not work: every detector has its own scale, the scale drifts, and you cannot tell how many false alarms a line will cause.
+### 1. The question
 
-**Choose the price, not the line.** You choose `q`, the share of *normal* scores allowed to raise an alarm (`q = 0.001`: about 1 false alarm per 1000 normal calls). DSPOT computes where the line must be. `q` means the same for every detector.
-
-**All tails look alike.** Extreme value theory says that, for almost any data, the way the extremes fade out follows one family of curves (the Generalized Pareto Distribution) with two knobs: how far out and how heavy the tail is. Like engineers sizing a dam for the "100-year flood" from 20 years of data, DSPOT fits this curve to the top 2% of scores and extends it to the 1-in-1000 point, beyond anything it has often seen.
-
-**Example.** From 3000 warm-up scores: the top 2% start at `t = 2.05` (about 60 peaks); the curve fitted to how far they stick out above `t`, extended 20 times rarer, gives the alarm line `z ≈ 3.1`.
-
-**Learning as it runs.** A new score below `t` is only counted; a new peak refits the curve; a score above the line is an **alarm and is not learned**, so an attacker cannot push the line up (poisoning).
-
-**Following drift (the "D").** Each score is compared with the average of the last 20 normal scores, like judging a voice against the background noise of a library or a café. The line rises and falls with the normal level.
-
-**Reviewer feedback.** Alarms a reviewer confirms as false alarms are learned (only those), which brings the false-alarm rate back to `q`. Wrong verdicts are dangerous: an attack labelled "false alarm" teaches DSPOT that very high scores are normal.
+A detector watches the agents and gives every tool call a **suspicion score**: higher means weirder.
 
 ```
-score - recent average -> top 2% (peaks) -> fit tail curve -> extend to q -> alarm line
-                                     new score above the line -> ALARM -> reviewer
+0.31  0.28  0.35  0.30  0.27  0.33  0.81  0.29  0.32 ...
+```
+
+We want to raise an alarm when a score is "too high". But **what counts as too high?** That's the whole question DSPOT answers.
+
+### 2. Why the obvious answers fail
+
+**Idea 1: "pick a number, say 0.6".**
+- Detectors have different scales: one gives scores around 0.3, another around 2, another around 50. One number can't fit all of them.
+- Even for one detector, how many false alarms will 0.6 cause? You don't know until it's too late.
+
+**Idea 2: "take the highest 0.1% of past scores".** To know where the top 0.1% begins, you need to have seen *many* extremes. With 1000 scores you've seen exactly **one** score in the top 0.1%, so the line is basically a guess based on one example.
+
+So we need a way to find the line **from few extremes**, for **any** detector.
+
+### 3. Turning it around: choose the price, not the line
+
+DSPOT flips the question. You don't choose the line; you choose **how many false alarms you'll accept**:
+
+> "Among normal tool calls, at most **1 in 1000** may trigger an alarm."
+
+That number is called `q` (here 0.001). DSPOT then **computes** where the line must be. That's useful because `q` means the same thing for every detector: *"about 10 false alarms per 10,000 normal calls."*
+
+### 4. The key insight: all tails look alike
+
+Think about the **heights of people**. Most are between 160 and 185 cm, and nobody cares about the middle. Now look only at people **taller than 190 cm**. How quickly do they become rarer as you go to 195, 200, 205? That "fading out" has a typical shape.
+
+The surprising mathematical fact (**extreme value theory**) is that for almost **any** kind of data (heights, floods, earthquakes, our anomaly scores), the way the extremes fade out follows **the same family of curves**. It's called the **Generalized Pareto Distribution**, and it has just two knobs:
+- **how far out** the extremes go (the scale, σ)
+- **how heavy** the tail is: do extremes stop at some point, fade out steadily, or occasionally get huge (the shape, γ)
+
+That's the magic: we don't need to know the whole distribution, only these **two knobs of the tail**.
+
+**An analogy:** engineers build dams for the "100-year flood" without having watched the river for 100 years. They measure the big floods of the last 20 years, fit this curve, and **extend it** to find how high a once-in-100-years flood would be. DSPOT does the same, for "once in 1000 normal calls".
+
+### 5. Step by step, with numbers
+
+Say the detector's first 3000 scores are normal (the **warm-up**).
+
+1. **Draw a "high but common" line.** Take the score that only the top 2% exceed: say **t = 2.05**. About 60 scores out of 3000 lie above it. These are the **peaks**, and we look only at them from now on.
+2. **Fit the curve to the peaks.** DSPOT looks at *how far* each peak sticks out above 2.05 (0.1, 0.3, 0.05, 0.8, …) and finds the two knobs that best explain that pattern (`domain/gpd.py`, `fit_gpd`).
+3. **Extend the curve to 1 in 1000.** The peaks are the top **2%**; we want the top **0.1%**, which is 20 times rarer than "being a peak". The fitted curve says how far out you must go for that (`tail_quantile`). The answer is **z ≈ 3.1**: the alarm line.
+
+The 60 peaks were enough to place a line that's **rarer than anything common in the data**. That's the extrapolation from step 4.
+
+### 6. Learning while it runs ("streaming")
+
+After the warm-up, every new score is one of three kinds (`domain/spot.py`, `SPOT.update`):
+
+| New score | What DSPOT does |
+|---|---|
+| below 2.05 (most scores) | just counts it |
+| between 2.05 and 3.1 (a new peak) | adds it to the peaks and **refits the curve**, so the line moves a little |
+| above 3.1 | **ALARM**, and it does **not** learn from it |
+
+Why not learn from alarms? Otherwise an attacker could send many slightly-too-high calls, the curve would learn "high is normal", the line would creep up, and real attacks would hide below it. Ignoring alarms makes DSPOT **resistant to this "poisoning"**.
+
+### 7. The "D": following drift
+
+Agents change: busier days, a new tool, longer prompts. All scores might slowly rise from about 1 to about 5. A fixed line at 3.1 would then flag **almost everything**.
+
+DSPOT's fix (`domain/dspot.py`): instead of the raw score, it looks at **how far a score is above the recent normal level** (the average of the last 20 normal scores):
+
+```
+raw score 5.4, recent average 4.8   →   it looks at 0.6
+```
+
+**An analogy:** in a quiet library, talking at normal volume is "loud". In a busy café, the same voice is unremarkable. DSPOT judges every score against the **current background noise**, so the alarm line rises and falls with it. That's the red line climbing in the evaluation plot.
+
+### 8. Learning from the reviewer
+
+Alarms go to the `alerts` topic. **ACI decides which sessions a human reviews** (at most one item per session), so an attacker can't flood the reviewers with alarms. When a reviewer judges a session:
+
+- **"Normal" (false alarm):** every call in it was normal, so DSPOT learns all of that session's alarms after all ("these can be normal"), and the line becomes a bit more relaxed.
+- **"Attack":** some call was bad, but we don't know which, so **nothing is learned**.
+
+This matters because ignoring all alarms (step 6) makes DSPOT a bit too nervous: about 2–3 false alarms per 1000 instead of 1. Learning only **confirmed** false alarms brings it back to about 1 in 1000, **without** reopening the poisoning door.
+
+**A warning from our experiments:** if the reviewer makes mistakes and calls real attacks "false alarms", DSPOT learns very high scores as normal, the line jumps up, and it starts missing attacks. With 10% wrong verdicts, it caught 367 of 498 attacks instead of all 498.
+
+### 9. The whole thing in one picture
+
+```
+scores ──► compare with recent average (drift)
+               │
+               ▼
+      look only at the top 2% (peaks)
+               │
+               ▼
+      fit the "tail curve" (2 knobs)
+               │
+               ▼
+      extend it to 1-in-1000  ──►  alarm line
+               │
+      new score above line? ──► ALARM ──► alerts
+                                            ┊ (ACI sends some sessions to a reviewer)
+                     reviewer: session "normal" → learn its alarms
+                               session "attack" → learn nothing
+
 ```
 
 ## Status
