@@ -71,6 +71,21 @@ docs/                       design documents, work plan, timeline and figures
 
 Work happens on the `development` branch: create a feature branch from it and open a pull request into `development`.
 
+## CI/CD
+
+Every service has its own GitHub Actions pipeline (`.github/workflows/<service>.yml`). It runs only when that service's folder changes, so services don't depend on each other. All pipelines share one template, `.github/workflows/_service.yml`:
+
+| Step | On a pull request | On a merge to `development` / `main` |
+|---|---|---|
+| lint (ruff) | warnings on the PR, never fails | same |
+| tests (pytest) | ✅ | ✅ |
+| Docker image build | ✅ (checks that it builds) | ✅ |
+| push to GHCR | – | ✅ `ghcr.io/agent-tool-use-guardrail-monitor-atgm/<image>`, tagged with the commit SHA and the branch name |
+
+To add a pipeline for a new service, copy e.g. `.github/workflows/s09-dspot.yml` and change the name, path and image (plus `java: true` or `postgres: true` if its tests need them).
+
+`.github/CODEOWNERS` maps every folder to its owner, so GitHub asks the right person to review a PR.
+
 ## Team rules
 
 1. Work in your own `services/` folder. Changes to `infra/` or topic names: tell the team first.
