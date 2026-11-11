@@ -1,6 +1,6 @@
 # ATGM: Agent Tool-Use Guardrail Monitor
 
-Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [architecture_and_team_work_plan.md](architecture_and_team_work_plan.md).
+Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [docs/architecture_and_team_work_plan.md](docs/architecture_and_team_work_plan.md).
 
 ## Run the platform
 
@@ -46,8 +46,9 @@ All platform services restart automatically after a server reboot (`restart: unl
 ## Repository layout
 
 ```
-docker-compose.yml          shared platform: Kafka, PostgreSQL, Grafana
-infra/                      Kafka topics, database setup, Grafana connection
+docker-compose.yml          everything that runs: platform, services, mocks (profile)
+infra/                      platform configuration used by the containers: Kafka topics, database setup, Grafana
+deploy/                     deployment targets: azure/ (one VM, scripted), k8s/ (stretch goal)
 services/
   agent-a/                  pointer only: Agent A lives in its own repository (see below)
   agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
@@ -57,7 +58,7 @@ services/
   storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
   stream-processing/        stream stages S01-S10, two per member (see its README)
   batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining (placeholders)
-docs/                       design documents and figures
+docs/                       design documents, work plan, timeline and figures
 ```
 
 ### Team repositories
