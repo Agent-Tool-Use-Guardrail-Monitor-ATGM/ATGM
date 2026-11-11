@@ -4,6 +4,128 @@
 
 Decides for every agent session whether to **pass** it, **flag** it, or send it to **review**, with error rates you choose, and keeps those rates under drift.
 
+## ACI explained
+
+### 1. The question
+
+DSPOT says "this one tool call looks suspicious". But someone still has to decide what to do with a whole **session**. ACI gives one of three answers per session:
+
+- **pass**: it's fine, nobody needs to look at it
+- **flag**: it's an attack, block it
+- **review**: not sure, a human should look
+
+And it does so with **error rates we choose in advance**, even when the data changes over time.
+
+**Why ACI if we already have DSPOT?** DSPOT only raises alarms, while ACI makes the **final decision per session** (pass, flag or review), controls **both** errors (normal sessions bothered *and* attacks not flagged), and decides **which sessions a human sees**, at most one item each, so an alarm flood can't swamp the reviewers. DSPOT is the fast smoke detector; ACI is the method that decides what happens next.
+
+### 2. Why the obvious answers fail
+
+**Idea 1: "flag if the session score is above 4, pass if below 2".** Where do 2 and 4 come from? Every detector has its own scale, scores drift, and nobody can tell you how many normal sessions get flagged or how many attacks slip through.
+
+**Idea 2: "train a classifier and flag if it says above 50% attack".** A classifier's 50% is often not a real 50%, especially for small or changing models. And it still gives no guarantee about error rates.
+
+So we need lines that are set **by the error rates we want**, not by guessing, and that **keep correcting themselves**.
+
+### 3. Choose the promises, not the lines
+
+As with DSPOT, we flip the question. We choose two promises:
+
+> **At most 5% of normal sessions** are not passed (flagged or sent to review).
+> **At most 10% of attacks** are not flagged (passed or sent to review).
+
+These are `ALPHA_NORMAL = 0.05` and `ALPHA_ATTACK = 0.1`. ACI then **finds and keeps** the two lines that fulfil them. Everything it isn't sure about goes to **review**, never silently through.
+
+### 4. The key insight: a line that corrects itself
+
+Think of a **thermostat**. It doesn't need to know the weather; it just reacts: too cold → heat a bit, too warm → heat less. ACI's lines work the same way (`domain/tracker.py`, `QuantileTracker.update`).
+
+Take the "pass" line and a stream of labelled **normal** sessions. After each one:
+
+- the session was **above** the line (we wrongly didn't pass it) → move the line **up** by `0.95 × step`
+- the session was **below** the line (correctly passed) → move the line **down** by `0.05 × step`
+
+"Up" steps are 19 times bigger than "down" steps. So the line comes to rest exactly where **5% of normal sessions are above it**: then the ups (5% × 0.95) and downs (95% × 0.05) cancel out.
+
+The remarkable part: this works **without any assumption about the data**. Even if the scores jump around, or an adversary picks them, the long-run error rate is guaranteed to approach 5% (Theorem 1 of the paper).
+
+### 5. Two lines, three answers
+
+ACI keeps **two** self-correcting lines per agent (`domain/triage.py`):
+
+- **"pass up to"**: learned from **normal** sessions, target 5%
+- **"flag from"**: learned from **attack** sessions, target 10%
+
+A session's suspicion `r` is its **highest anomaly score** (from the detectors in `DETECTORS`). With lines at 2.2 and 4.3:
+
+```
+0 ─────────── 2.2 ─────────── 4.3 ─────────── 20
+     PASS      │    REVIEW     │     FLAG
+          "pass up to"     "flag from"
+```
+
+| Session | r | Decision |
+|---|---|---|
+| normal email | 0.5 | **pass** |
+| `send_email` attack | 5.9 | **flag** |
+| odd but normal session | 3.1 | **review**: too odd to wave through, not clearly an attack |
+
+If the lines cross (some scores fit both "normal" and "attack"), that overlap is also **review**. Technically, each line says whether a label is still possible, and ACI looks at the **set** of possible labels: {compliant} → pass, {violating} → flag, both or neither → review. This is called (class-conditional) conformal prediction.
+
+### 6. Shrinking steps: the 2024 improvement
+
+How big is a "step"? The original ACI (Gibbs & Candès, 2021) always uses the **same** step, so the line keeps wobbling forever, even when nothing changes.
+
+The 2024 paper makes the steps **shrink over time**: `step = c · t^(-0.6)` (`QuantileTracker.eta`). An analogy is **tuning a guitar**: big turns of the peg first, then smaller and smaller ones until it's in tune.
+
+- **Big steps at the start:** it learns quickly.
+- **Tiny steps later:** it settles calmly at the right place. For stable data the paper proves it converges to the correct line (Theorem 3), which the constant step can't do.
+
+**The trade-off:** when the data drifts, small late steps follow more **slowly**. The paper allows **resetting** the step size after a change, so resetting when a drift detector (S02 OPTWIN or S06 KSWIN) fires is a natural extension.
+
+### 7. Where the labels come from: random audits
+
+The lines learn from **labelled** sessions, i.e. a reviewer said "normal" or "attack". ACI picks a **random** 30% of **all** sessions (`AUDIT_RATE`), whatever it decided, and sends them to the review queue as **audits** (`service.py`). It learns **only** from these.
+
+Why random, and not just the "review" sessions? The review sessions are all borderline ones. Learning only from them is like learning what a normal day looks like from only the strange days. A random sample shows the real picture, so the promises hold for **all** sessions.
+
+**Safe start:** at the beginning both lines are at the "everything goes to review" position. As audit answers arrive, the review band narrows.
+
+### 8. Session timing and agents
+
+- ACI collects every score of a session and waits until the agent reports `session.ended`, plus 2 seconds for late scores (`GRACE_SECONDS`), then decides (`ACIService.tick`).
+- **Each agent gets its own pair of lines**, because Agent A and Agent B behave differently.
+- Every decision goes to `flags`. Review decisions and audits also go to `review-queue`: at most **one item per session**, which keeps the reviewers' workload bounded.
+
+### 9. What we found
+
+| Step size | Normal not passed (≤ 5%) | Attacks not flagged (≤ 10%) | Line jitter |
+|---|---|---|---|
+| shrinking (2024) | 5.2% | 8.8% | 0.13 |
+| constant (2021) | 5.3% | 9.7% | 1.47 |
+
+- **Both keep the promises; the shrinking steps are about 10× calmer.**
+- **Under drift** the shrinking steps follow more slowly (7.5% instead of 5%).
+- **Rare attacks learn slowly:** with 5% attacks, the "flag from" line gets few examples. In the end-to-end run no attack passed silently, but more of them went to review instead of flagged than promised. The promise holds *in the long run*, and rare classes take longer.
+- **Review load vs. learning speed:** more audits make ACI learn faster but cost reviewers more time.
+
+### 10. The whole thing in one picture
+
+```
+scores of a session ──► highest score r ──► session ended (+2 s)
+                                                │
+                     ┌──────────────────────────┴──────────────────────────┐
+                     ▼                                                     ▼
+          r ≤ "pass up to" only → PASS        r ≥ "flag from" only → FLAG      otherwise → REVIEW
+                     │                                                     │
+                     └───────── random 30% of all sessions: AUDIT ─────────┘
+                                                │
+                                   reviewer: normal / attack
+                                                │
+                          normal → nudge "pass up to"   attack → nudge "flag from"
+                          (steps get smaller over time)
+
+```
+
 ## Status
 
 - [x] Decaying-step online conformal threshold (`domain/tracker.py`)
