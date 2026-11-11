@@ -1,6 +1,7 @@
 # ATGM platform: Kafka, PostgreSQL (our single database), Grafana.
 # First time: cp .env.example .env  (and set passwords; .env is git-ignored)
 # Start: docker compose up -d     Stop: docker compose down     Reset all data: docker compose down -v
+# Ports are published on 127.0.0.1 only: on the shared server, reach them through an SSH tunnel (see README).
 name: atgm
 
 services:
@@ -8,7 +9,7 @@ services:
     image: apache/kafka:3.8.0
     hostname: kafka
     ports:
-      - "29092:29092"                      # from your PC: localhost:29092 / from containers: kafka:9092
+      - "127.0.0.1:29092:29092"            # from this machine: localhost:29092 / from containers: kafka:9092
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -25,6 +26,7 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topics come only from infra/kafka/topics.txt
     volumes:
       - kafka-data:/var/lib/kafka/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 10s
@@ -44,18 +46,19 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"              # no login: reachable only from this machine (or an SSH tunnel)
     environment:
       KAFKA_CLUSTERS_0_NAME: atgm
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     depends_on:
       kafka:
         condition: service_healthy
+    restart: unless-stopped
 
   postgres:
     image: postgres:16
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: atgm_admin
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
@@ -64,6 +67,7 @@ services:
     volumes:
       - pg-data:/var/lib/postgresql/data
       - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U atgm_admin -d postgres"]
       interval: 5s
@@ -73,7 +77,7 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     ports:
-      - "3000:3000"                        # login: admin / GRAFANA_ADMIN_PASSWORD
+      - "127.0.0.1:3000:3000"              # login: admin / GRAFANA_ADMIN_PASSWORD
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set it in .env}
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set it in .env}
@@ -83,18 +87,125 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
-  # Services are added here as they are built, e.g.:
-  # agent-a:
-  #   build: ./services/agent-a
+  dspot:                                   # DSPOT alarm thresholds (services/stream-processing/dspot)
+    build: ./services/stream-processing/dspot
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      DSPOT_Q: "0.001"                     # false-alarm probability on normal scores
+      DSPOT_WARMUP: "3000"                 # normal scores per (agent, detector) before alarms start
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  online-forest:
+    build: ./services/stream-processing/online_forest
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: online-forest-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  aci:                                     # conformal triage: pass / flag / review (services/stream-processing/aci)
+    build: ./services/stream-processing/aci
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      DETECTORS: mock_scorer               # session score = highest score of these detectors
+      ALPHA_NORMAL: "0.05"                 # normal sessions not passed (flagged or reviewed), at most
+      ALPHA_ATTACK: "0.1"                  # attack sessions not flagged (passed or reviewed), at most
+      AUDIT_RATE: "0.3"                    # random share of sessions sent to review to learn from (attacks are rare)
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  review-queue:                            # review queue + simulated reviewer (services/review-queue)
+    build: ./services/review-queue
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      REVIEW_DELAY_SECONDS: "10"
+      REVIEWER_ERROR_RATE: "0"             # share of sessions the simulated reviewer gets wrong
+      DB_HOST: postgres
+      DB_NAME: scenario_db                 # reads the scenario ground truth
+      DB_USER: scenario_svc
+      DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  storage-sink:                            # copies all Kafka events into analytics_db (services/storage-sink)
+    build: ./services/storage-sink
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      DB_HOST: postgres
+      DB_NAME: analytics_db                # Grafana reads this database (read-only)
+      DB_USER: analytics_svc
+      DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Temporary stand-ins (services/mocks) until the real agents and detectors publish to Kafka.
+  # Started only with:  docker compose --profile mocks up -d
+  mock-agents:
+    build: ./services/mocks
+    command: ["python", "-m", "atgm_mocks.run_agents"]
+    profiles: ["mocks"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      SESSIONS_PER_SECOND: "5"
+      WARMUP_SESSIONS: "1000"              # normal-only sessions per agent before attacks start
+      ATTACK_RATE: "0.05"
+      DB_HOST: postgres
+      DB_NAME: scenario_db
+      DB_USER: scenario_svc
+      DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mock-scorer:
+    build: ./services/mocks
+    command: ["python", "-m", "atgm_mocks.run_scorer"]
+    profiles: ["mocks"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Services in this repository are added here as they are built, e.g.:
+  # agent-b:
+  #   build: ./services/agent-b
   #   environment:
   #     KAFKA_BOOTSTRAP: kafka:9092
-  #     DATABASE_URL: postgresql://agent_a_svc:${SERVICE_DB_PASSWORD}@postgres:5432/agent_a_db
+  #     DATABASE_URL: postgresql://agent_b_svc:${SERVICE_DB_PASSWORD}@postgres:5432/agent_b_db
   #   depends_on:
   #     kafka-init:
   #       condition: service_completed_successfully
+  # Services in other repositories (e.g. datalens-agent) join the "atgm" network instead.
 
 volumes:
   kafka-data:
   pg-data:
   grafana-data:
+
+# Named network "atgm": services from other repositories (e.g. datalens-agent) join it
+# to reach kafka:9092 by name. See README, "Connecting a service from another repository".
+networks:
+  default:
+    name: atgm

@@ -1,0 +1,21 @@
+[project]
+name = "atgm-mocks"
+version = "0.1.0"
+description = "Temporary stand-ins (agents, scorer) so the ATGM pipeline runs before the real services exist"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+kafka = ["confluent-kafka>=2.4", "psycopg[binary]>=3.1"]   # only for the running services
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

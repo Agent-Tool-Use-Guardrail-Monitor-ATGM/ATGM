@@ -1,0 +1,32 @@
+[project]
+name = "agent-b"
+version = "0.1.0"
+description = "Agent B email drafting agent for the ATGM project"
+readme = "README.md"
+
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.4.6",
+    "langchain-ollama>=1.1.0",
+    "langchain-openai>=1.7.2",
+    "python-dotenv>=1.2.4",
+    "pandas>=2.2",
+    "ucimlrepo>=0.0.7",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+agent-b = "agent_b.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "agent_b"
+module-root = "src"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

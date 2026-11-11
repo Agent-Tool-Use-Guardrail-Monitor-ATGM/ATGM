@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.venv/
+.venv311/
+.env
+__pycache__/
+*.pyc
+services/agent-b/src/logs/

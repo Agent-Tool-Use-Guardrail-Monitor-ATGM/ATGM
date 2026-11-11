@@ -1,14 +1,8 @@
-# Agent A (placeholder)
+# Agent A
 
-**Owners:** Maxim, Asmar · **Tools:** `read_file`, `calculator` · **Publishes to:** `tool-calls.A`
+Agent A (statistics/calculator agent) is developed in its own repository:
+**[datalens-agent](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-agent)** (owners: Maxim, Asmar).
 
-Event format: see the agent event schema (Teams chat).
-
-Suggested layout (ports & adapters):
-
-```
-domain/     agent logic and tools; no Kafka/DB imports
-adapters/   Kafka publisher, LLM client, database
-main.py     wires domain + adapters, reads config from environment variables
-Dockerfile
-```
+It publishes its tool-call events to the `tool-calls.A` Kafka topic of this platform. To reach Kafka at
+`kafka:9092`, its compose file joins the shared `atgm` network (see the main README,
+"Connecting a service from another repository").
