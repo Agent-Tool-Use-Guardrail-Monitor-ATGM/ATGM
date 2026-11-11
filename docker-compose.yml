@@ -109,7 +109,19 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
-
+  sliding-window-topk:                
+    build: ./services/stream-processing/sliding_window
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      SOURCES: alarms                      # later flags
+      TOPK_K: "3"
+      TOPK_SLOT_SECONDS: "30"
+      TOPK_UNITS: "20"                     # window = 20 x 30 s = 10 min
+      TOPK_EPSILON: "1"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
   aci:                                     # conformal triage: pass / flag / review (services/stream-processing/aci)
     build: ./services/stream-processing/aci
     environment:
