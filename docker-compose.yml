@@ -109,8 +109,8 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
-  sliding-window-topk:                
-    build: ./services/stream-processing/sliding_window
+  sliding-top-k:                
+    build: ./services/stream-processing/s03-sliding-top-k
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       SOURCES: alarms                      # later flags
