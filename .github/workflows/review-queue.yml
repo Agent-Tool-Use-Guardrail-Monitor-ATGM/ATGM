@@ -1,0 +1,21 @@
+name: review queue
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/review-queue/**", ".github/workflows/review-queue.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/review-queue/**", ".github/workflows/review-queue.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/review-queue
+      image: atgm-review-queue

@@ -1,6 +1,6 @@
 # ATGM: Agent Tool-Use Guardrail Monitor
 
-Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [architecture_and_team_work_plan.md](architecture_and_team_work_plan.md).
+Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [docs/architecture_and_team_work_plan.md](docs/architecture_and_team_work_plan.md).
 
 ## Run the platform
 
@@ -46,8 +46,9 @@ All platform services restart automatically after a server reboot (`restart: unl
 ## Repository layout
 
 ```
-docker-compose.yml          shared platform: Kafka, PostgreSQL, Grafana
-infra/                      Kafka topics, database setup, Grafana connection
+docker-compose.yml          everything that runs: platform, services, mocks (profile)
+infra/                      platform configuration used by the containers: Kafka topics, database setup, Grafana
+deploy/                     deployment targets: azure/ (one VM, scripted), k8s/ (stretch goal)
 services/
   agent-a/                  pointer only: Agent A lives in its own repository (see below)
   agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
@@ -55,8 +56,9 @@ services/
   mocks/                    temporary stand-ins for agents and detectors (Áron)
   review-queue/             review queue with a simulated reviewer (Áron)
   storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
-  stream-processing/        one subfolder per member's algorithms
-docs/                       design documents and figures
+  stream-processing/        stream stages S01-S10, two per member (see its README)
+  batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining (placeholders)
+docs/                       design documents, work plan, timeline and figures
 ```
 
 ### Team repositories
@@ -68,6 +70,21 @@ docs/                       design documents and figures
 | [datalens-identity](https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/datalens-identity) | User login (Keycloak) for the agents | Maxim |
 
 Work happens on the `development` branch: create a feature branch from it and open a pull request into `development`.
+
+## CI/CD
+
+Every service has its own GitHub Actions pipeline (`.github/workflows/<service>.yml`). It runs only when that service's folder changes, so services don't depend on each other. All pipelines share one template, `.github/workflows/_service.yml`:
+
+| Step | On a pull request | On a merge to `development` / `main` |
+|---|---|---|
+| lint (ruff) | warnings on the PR, never fails | same |
+| tests (pytest) | ✅ | ✅ |
+| Docker image build | ✅ (checks that it builds) | ✅ |
+| push to GHCR | – | ✅ `ghcr.io/agent-tool-use-guardrail-monitor-atgm/<image>`, tagged with the commit SHA and the branch name |
+
+To add a pipeline for a new service, copy e.g. `.github/workflows/s09-dspot.yml` and change the name, path and image (plus `java: true` or `postgres: true` if its tests need them).
+
+`.github/CODEOWNERS` maps every folder to its owner, so GitHub asks the right person to review a PR.
 
 ## Team rules
 

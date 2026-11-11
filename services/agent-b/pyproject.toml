@@ -10,6 +10,9 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "langchain-openai>=1.7.2",
     "python-dotenv>=1.2.4",
+    "pandas>=2.2",
+    "ucimlrepo>=0.0.7",
+    "pytest>=8.0",
 ]
 
 [project.scripts]

@@ -89,8 +89,8 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  dspot:                                   # DSPOT alarm thresholds (services/stream-processing/dspot)
-    build: ./services/stream-processing/dspot
+  dspot:                                   # S09 DSPOT alarm thresholds (services/stream-processing/s09-dspot)
+    build: ./services/stream-processing/s09-dspot
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       DSPOT_Q: "0.001"                     # false-alarm probability on normal scores
@@ -101,7 +101,7 @@ services:
     restart: unless-stopped
 
   online-forest:
-    build: ./services/stream-processing/online_forest
+    build: ./services/stream-processing/s04-online-forest
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       KAFKA_GROUP_ID: online-forest-consumer
@@ -122,8 +122,8 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
-  aci:                                     # conformal triage: pass / flag / review (services/stream-processing/aci)
-    build: ./services/stream-processing/aci
+  aci:                                     # S10 conformal triage: pass / flag / review (services/stream-processing/s10-aci)
+    build: ./services/stream-processing/s10-aci
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       DETECTORS: mock_scorer               # session score = highest score of these detectors
