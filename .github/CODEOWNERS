@@ -1,0 +1,35 @@
+# GitHub automatically requests a review from the owners of the files a PR changes.
+# Later lines win. Accounts: Áron @PappAron, Agnes @orkaagi, Fanni @ofanni03,
+# Maxim @maksimkins, Asmar @AsmarBaghirova.
+
+# Platform, deployment, CI (Áron)
+/docker-compose.yml                                   @PappAron
+/infra/                                               @PappAron
+/deploy/                                              @PappAron
+/.github/                                             @PappAron
+
+# Services
+/services/agent-a/                                    @maksimkins
+/services/agent-b/                                    @ofanni03 @orkaagi
+/services/scenario-generator/                         @PappAron @ofanni03
+/services/mocks/                                      @PappAron
+/services/review-queue/                               @PappAron
+/services/storage-sink/                               @PappAron
+
+# Stream stages S01-S10
+/services/stream-processing/s01-online-bls/           @maksimkins
+/services/stream-processing/s02-optwin/               @maksimkins
+/services/stream-processing/s03-sliding-top-k/        @ofanni03
+/services/stream-processing/s04-online-forest/        @ofanni03
+/services/stream-processing/s05-spacesaving/          @AsmarBaghirova
+/services/stream-processing/s06-kswin/                @AsmarBaghirova
+/services/stream-processing/s07-allow-list-check/     @orkaagi
+/services/stream-processing/s08-markov-order-check/   @orkaagi
+/services/stream-processing/s09-dspot/                @PappAron
+/services/stream-processing/s10-aci/                  @PappAron
+
+# Batch jobs B1-B4
+/services/batch-processing/b1-binary-classifier/      @ofanni03
+/services/batch-processing/b2-violation-type-classifier/ @AsmarBaghirova
+/services/batch-processing/b3-markov-chain/           @orkaagi
+/services/batch-processing/b4-retraining-and-model-registry/ @maksimkins
