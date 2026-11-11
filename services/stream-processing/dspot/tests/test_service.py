@@ -16,17 +16,19 @@ class FakeSink:
         self.sent.append((topic, key, value))
 
 
-def scored(ref, value, agent="A", detector="iforest", **extra):
+def scored(ref, value, agent="A", detector="iforest", session="s-1", **extra):
     return {"schema_version": "1.0", "event_id": f"id-{ref}", "event_type": events.SCORED,
-            "occurred_at": "2026-11-01T12:00:00+00:00", "run_id": "run-1", "session_id": "s-1",
+            "occurred_at": "2026-11-01T12:00:00+00:00", "run_id": "run-1", "session_id": session,
             "sequence": 3, "request_id": None,
             "data": {"scored_event_id": ref, "agent_id": agent, "detector": detector,
                      "model_version": "v2", "score": value, **extra}}
 
 
-def labelled(ref, verdict, detector="iforest"):
-    return {"schema_version": "1.0", "event_id": f"label-{ref}", "event_type": events.LABELLED,
-            "data": {"scored_event_id": ref, "detector": detector, "verdict": verdict}}
+def labelled(session, verdict):
+    """A reviewer verdict on a whole session, as the review queue sends it for ACI's items."""
+    return {"schema_version": "1.0", "event_id": f"label-{session}", "event_type": events.LABELLED,
+            "session_id": session,
+            "data": {"scored_event_id": f"end-{session}", "detector": "aci", "verdict": verdict}}
 
 
 @pytest.fixture
@@ -37,11 +39,11 @@ def service():
     return svc
 
 
-def test_alarm_is_published_on_both_topics_in_the_envelope_format(service):
+def test_alarm_is_published_to_alerts_only_in_the_envelope_format(service):
     service.handle(scored("e1", 0.1))
     assert service.sink.sent == []
     service.handle(scored("e2", 9.0))
-    assert [(t, k) for t, k, _ in service.sink.sent] == [("alerts", "A"), ("review-queue", "A")]
+    assert [(t, k) for t, k, _ in service.sink.sent] == [("alerts", "A")]    # review is ACI's job
     event = service.sink.sent[0][2]
     assert event["schema_version"] == "1.0" and event["event_type"] == "alarm.raised"
     assert (event["run_id"], event["session_id"], event["sequence"]) == ("run-1", "s-1", 3)
@@ -52,12 +54,12 @@ def test_alarm_is_published_on_both_topics_in_the_envelope_format(service):
 
 def test_false_alarm_label_is_learned_and_attack_label_is_not(service):
     dspot = service.monitor.detectors[("A", "iforest")]
-    service.handle(scored("e1", 9.0))
-    service.handle(scored("e2", 11.0))
+    service.handle(scored("e1", 9.0, session="normal-session"))
+    service.handle(scored("e2", 11.0, session="attack-session"))
     peaks = dspot.spot.n_peaks
-    service.handle(labelled("e2", "attack"))
+    service.handle(labelled("attack-session", "attack"))
     assert dspot.spot.n_peaks == peaks
-    service.handle(labelled("e1", "false_alarm"))
+    service.handle(labelled("normal-session", "false_alarm"))
     assert dspot.spot.n_peaks == peaks + 1
 
 
@@ -69,6 +71,7 @@ def test_false_alarm_label_is_learned_and_attack_label_is_not(service):
     scored("e", float("nan")),
     {**scored("e", 1.0), "data": {"score": 1.0}},  # missing fields
     labelled("e", "maybe"),
+    {**labelled("s", "attack"), "session_id": None},   # verdicts are matched by session
 ])
 def test_bad_messages_are_skipped_with_a_warning(service, bad, caplog):
     with caplog.at_level(logging.WARNING, logger="dspot"):

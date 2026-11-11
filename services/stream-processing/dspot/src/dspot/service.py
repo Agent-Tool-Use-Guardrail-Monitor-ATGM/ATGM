@@ -1,5 +1,9 @@
 """DSPOT service: routes Kafka messages to the alarm monitor and publishes its alarms.
 
+Alarms go to `alerts` only. What a human reviews is decided by ACI (one item per session),
+so a flood of alarms cannot swamp the review queue. Reviewer verdicts arrive on `labels`
+and are matched to DSPOT's alarms by session.
+
 It only depends on a `sink` with send(topic, key, value), so it is tested without Kafka.
 """
 from __future__ import annotations
@@ -19,7 +23,7 @@ class Sink(Protocol):
 
 class DSPOTService:
     def __init__(self, monitor: AlarmMonitor, sink: Sink,
-                 alarm_topics: tuple[str, ...] = ("alerts", "review-queue")) -> None:
+                 alarm_topics: tuple[str, ...] = ("alerts",)) -> None:
         self.monitor = monitor
         self.sink = sink
         self.alarm_topics = alarm_topics
@@ -53,5 +57,6 @@ class DSPOTService:
 
     def _on_label(self, msg: dict) -> None:
         verdict = events.parse_verdict(msg)
-        if self.monitor.on_verdict(verdict):
-            log.info("learned false alarm %s (%s)", verdict.ref, verdict.detector)
+        learned = self.monitor.on_verdict(verdict)
+        if learned:
+            log.info("session %s reviewed as normal: learned %d false alarm(s)", verdict.session_id, learned)
