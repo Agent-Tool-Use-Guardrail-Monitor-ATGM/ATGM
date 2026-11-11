@@ -2,8 +2,10 @@
 
 1. Publishes synthetic anomaly.scored events to `scores` for one (agent, detector) stream:
    a normal warm-up, then a drifting stream with injected attacks.
-2. Acts as a simulated reviewer: reads alarm.raised events from `review-queue` and answers
-   each one on `labels` ("attack" if it was injected, otherwise "false_alarm").
+   Every score gets its own session, so each alarm can be judged on its own.
+2. Acts as a simulated reviewer: reads alarm.raised events from `alerts` and answers each
+   alarm's session on `labels` ("attack" if it was injected, otherwise "false_alarm").
+   (In the full system ACI decides which sessions are reviewed; this demo runs DSPOT alone.)
 
 Watch the topics in kafka-ui (http://localhost:8080) and the service log
 (docker compose logs -f dspot).
@@ -52,21 +54,20 @@ def main(argv=None) -> None:
         scores[i] += rng.uniform(6.0, 10.0)
 
     producer = Producer({"bootstrap.servers": args.bootstrap})
-    session = str(uuid.uuid4())
-    refs = {}
+    sessions = {}                                      # session id -> was it an attack
     for i, value in enumerate(scores):
-        ref = str(uuid.uuid4())
-        refs[ref] = i in attacks
-        data = {"scored_event_id": ref, "agent_id": args.agent, "detector": args.detector,
+        session = str(uuid.uuid4())
+        sessions[session] = i in attacks
+        data = {"scored_event_id": str(uuid.uuid4()), "agent_id": args.agent, "detector": args.detector,
                 "model_version": "demo", "score": float(value)}
-        producer.produce("scores", key=args.agent, value=json.dumps(envelope(events.SCORED, data, session, i + 1)))
+        producer.produce("scores", key=args.agent, value=json.dumps(envelope(events.SCORED, data, session, 1)))
         producer.poll(0)
     producer.flush(30)
     print(f"sent {len(scores)} scores ({args.warmup} warm-up, {len(attacks)} attacks)")
 
     consumer = Consumer({"bootstrap.servers": args.bootstrap, "group.id": f"demo-reviewer-{RUN_ID}",
                          "auto.offset.reset": "earliest"})
-    consumer.subscribe(["review-queue"])
+    consumer.subscribe(["alerts"])
     caught = false_alarms = 0
     deadline = time.time() + args.review_seconds
     while time.time() < deadline:
@@ -74,13 +75,13 @@ def main(argv=None) -> None:
         if msg is None or msg.error():
             continue
         alarm = json.loads(msg.value())
-        ref = alarm.get("data", {}).get("scored_event_id")
-        if alarm.get("event_type") != events.ALARM or ref not in refs:
+        session = alarm.get("session_id")
+        if alarm.get("event_type") != events.ALARM or session not in sessions:
             continue                                   # alarms from other runs or detectors
-        is_attack = refs[ref]
+        is_attack = sessions[session]
         caught += is_attack
         false_alarms += not is_attack
-        verdict = {"scored_event_id": ref, "detector": args.detector,
+        verdict = {"scored_event_id": alarm["data"]["scored_event_id"], "detector": args.detector,
                    "verdict": "attack" if is_attack else "false_alarm"}
         producer.produce("labels", key=args.agent, value=json.dumps(envelope(events.LABELLED, verdict, session, 1)))
         producer.poll(0)

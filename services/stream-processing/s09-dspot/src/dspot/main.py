@@ -3,7 +3,7 @@
 Configuration (environment variables, defaults in brackets):
     KAFKA_BOOTSTRAP [localhost:29092]   DSPOT_GROUP_ID [dspot]
     DSPOT_Q [0.001]  DSPOT_LEVEL [0.98]  DSPOT_DEPTH [20]  DSPOT_WARMUP [3000]
-    SCORES_TOPIC [scores]  LABELS_TOPIC [labels]  ALARM_TOPICS [alerts,review-queue]
+    SCORES_TOPIC [scores]  LABELS_TOPIC [labels]  ALARM_TOPICS [alerts]
 
 State lives in memory: after a restart every stream warms up again.
 """
@@ -25,7 +25,7 @@ def main() -> None:
     monitor = AlarmMonitor(q=float(env("DSPOT_Q", "0.001")), level=float(env("DSPOT_LEVEL", "0.98")),
                            depth=int(env("DSPOT_DEPTH", "20")), warmup=int(env("DSPOT_WARMUP", "3000")))
     sink = KafkaSink(bootstrap)
-    service = DSPOTService(monitor, sink, tuple(env("ALARM_TOPICS", "alerts,review-queue").split(",")))
+    service = DSPOTService(monitor, sink, tuple(env("ALARM_TOPICS", "alerts").split(",")))
     source = KafkaSource(bootstrap, env("DSPOT_GROUP_ID", "dspot"),
                          [env("SCORES_TOPIC", "scores"), env("LABELS_TOPIC", "labels")])
     logging.getLogger("dspot").info("DSPOT service started (q=%g, warm-up %d scores per stream)",

@@ -10,7 +10,7 @@ Copies every event from the ATGM topics into `analytics_db`, so that **Grafana d
 | `scores` | anomaly scores of every detector | `scores` |
 | `alarms` | DSPOT alarms with score, threshold and `q` | `alerts` |
 | `labels` | reviewer verdicts (`attack` / `false_alarm`, violation type) | `labels` |
-| `other_events` | everything else as raw JSON (e.g. ACI decisions, flags, toolset changes) | `flags`, `toolset-config`, … |
+| `other_events` | everything else as raw JSON (ACI decisions, rule violations, drift, counts, toolset changes) | `flags`, `drift`, `stats`, `toolset-config` |
 
 Every table has `event_id` (primary key), `occurred_at`, `session_id` and `run_id`, plus the typed columns of its event. `agent_events.arguments` and the `data` columns are JSONB, e.g. `arguments->>'dataset_id'`.
 

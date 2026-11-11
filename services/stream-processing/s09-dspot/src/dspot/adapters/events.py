@@ -7,9 +7,10 @@
 The `data` of the three event types DSPOT uses (proposed, see the README):
 
     anomaly.scored   (topic scores)        {scored_event_id, agent_id, detector, model_version, score}
-    alarm.raised     (alerts, review-queue) {scored_event_id, agent_id, detector, model_version,
+    alarm.raised     (topic alerts)        {scored_event_id, agent_id, detector, model_version,
                                              score, threshold, q}
-    review.labelled  (topic labels)        {scored_event_id, detector, verdict: "false_alarm" | "attack"}
+    review.labelled  (topic labels)        {verdict: "false_alarm" | "attack", ...}; matched to
+                                           DSPOT's alarms by the envelope's session_id
 
 Only this module knows the format; the domain works with Score, Alarm and Verdict.
 """
@@ -39,8 +40,10 @@ def _data(msg: dict) -> dict:
 def parse_score(msg: dict) -> Score:
     d = _data(msg)
     try:
+        session = msg.get("session_id")
         return Score(ref=str(d["scored_event_id"]), agent_id=str(d["agent_id"]),
-                     detector=str(d["detector"]), value=float(d["score"]))
+                     detector=str(d["detector"]), value=float(d["score"]),
+                     session_id=None if session is None else str(session))
     except (KeyError, TypeError, ValueError) as e:
         raise ValueError(f"bad {SCORED} data: {e}") from None
 
@@ -48,8 +51,9 @@ def parse_score(msg: dict) -> Score:
 def parse_verdict(msg: dict) -> Verdict:
     d = _data(msg)
     try:
-        return Verdict(ref=str(d["scored_event_id"]), detector=str(d["detector"]),
-                       false_alarm=VERDICTS[d["verdict"]])
+        if not msg.get("session_id"):
+            raise KeyError("session_id")
+        return Verdict(session_id=str(msg["session_id"]), false_alarm=VERDICTS[d["verdict"]])
     except (KeyError, TypeError) as e:
         raise ValueError(f"bad {LABELLED} data: {e}") from None
 
