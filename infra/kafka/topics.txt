@@ -8,6 +8,8 @@ toolset-config       1           compact   scenario-generator (key = agent_id; k
 scores               3           delete    detectors: anomaly.scored (key = agent_id)
 flags                3           delete    stream stages
 alerts               1           delete    stream stages
+drift                1           delete    drift detectors: drift.detected (S02, S06)
+stats                1           delete    counting stages: counts.summary (S03, S05)
 review-queue         1           delete    stream stages
 labels               1           delete    review
 model-updates        1           compact   batch training (key = model name)
