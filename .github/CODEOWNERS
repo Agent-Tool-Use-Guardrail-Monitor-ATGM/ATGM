@@ -10,6 +10,7 @@
 
 # Services
 /services/agent-a/                                    @maksimkins
+/services/agent-a-adapter/                            @PappAron @maksimkins
 /services/agent-b/                                    @ofanni03 @orkaagi
 /services/scenario-generator/                         @PappAron @ofanni03
 /services/mocks/                                      @PappAron

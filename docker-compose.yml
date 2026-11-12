@@ -100,6 +100,15 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  agent-a-adapter:                         # DataLens telemetry (agent.events.v1) -> tool-calls.A (services/agent-a-adapter)
+    build: ./services/agent-a-adapter
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   online-forest:
     build: ./services/stream-processing/s04-online-forest
     environment:
@@ -163,6 +172,7 @@ services:
     profiles: ["mocks"]
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      MOCK_AGENTS: "A,B"                  # "B" when the real Agent A (DataLens) publishes to agent.events.v1
       SESSIONS_PER_SECOND: "5"
       WARMUP_SESSIONS: "1000"              # normal-only sessions per agent before attacks start
       ATTACK_RATE: "0.05"

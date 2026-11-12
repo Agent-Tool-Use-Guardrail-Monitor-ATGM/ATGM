@@ -171,7 +171,7 @@ The decaying step is **ten times steadier** but **slower to follow drift**: unde
 
 ## Kafka service
 
-Reads `tool-calls.A`, `tool-calls.B`, `agent.events.v1` (session ends), `scores` and `labels`. After `session.ended` it waits `GRACE_SECONDS` for late scores, then publishes `decision.made` (Agent A's envelope) to `flags`. Review decisions and audits also go to `review-queue`.
+Reads `tool-calls.A`, `tool-calls.B` (session ends; Agent A's real events arrive there through the `agent-a-adapter`), `scores` and `labels`. After `session.ended` it waits `GRACE_SECONDS` for late scores, then publishes `decision.made` (Agent A's envelope) to `flags`. Review decisions and audits also go to `review-queue`.
 
 ```json
 {"event_type": "decision.made", "session_id": "…",
