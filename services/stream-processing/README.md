@@ -20,10 +20,25 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 Tool calls arrive on `tool-calls.A` and `tool-calls.B` (key = session id, so a session's calls stay in order). Until the real agents publish, start the mock agents: `docker compose --profile mocks up -d`. Each message uses the shared envelope:
 
 ```json
-{"schema_version": "1.0", "event_id": "…", "event_type": "tool_call.completed",
- "occurred_at": "…", "run_id": "…", "session_id": "…", "sequence": 3, "request_id": null,
- "data": {"agent_id": "B", "tool_name": "tone_checker", "arguments": {…}, "duration_ms": 27,
-          "success": true, "session_call_index": 2, "time_since_previous_call_ms": 1180}}
+{
+  "schema_version": "1.0",
+  "event_id": "…",
+  "event_type": "tool_call.completed",
+  "occurred_at": "…",
+  "run_id": "…",
+  "session_id": "…",
+  "sequence": 3,
+  "request_id": null,
+  "data": {
+    "agent_id": "B",
+    "tool_name": "tone_checker",
+    "arguments": {…},
+    "duration_ms": 27,
+    "success": true,
+    "session_call_index": 2,
+    "time_since_previous_call_ms": 1180,
+  },
+}
 ```
 
 Other event types on these topics: `session.started`, `tool_call.failed`, `session.ended` (`data.call_count`).
