@@ -1,4 +1,4 @@
-"""Publishes agent session and tool call events to Kafka (schema_version "1.0").
+"""Publishes agent session and tool call events to Kafka or writes them into a specified file, thus creating the dataset.
 
 Per user prompt (= session): session.started, one tool_call.completed /
 tool_call.failed per tool call, session.ended.
@@ -16,6 +16,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
+from pathlib import Path
+from typing import Protocol, TextIO
 
 from confluent_kafka import Producer
 from langchain_core.callbacks import BaseCallbackHandler
@@ -38,13 +40,52 @@ def envelope(event_type: str, data: dict, *, run_id: str, session_id: str, seque
         "data": data,
     }
 
+class EventSink(Protocol):
+    def send(self, key: str, event: dict) -> None: ...
+    def flush(self) -> None: ...
+
+
+class KafkaSink:
+    def __init__(self, producer: Producer, topic: str) -> None:
+        self._producer = producer
+        self._topic = topic
+
+    def send(self, key: str, event: dict) -> None:
+        self._producer.produce(self._topic, key=key, value=json.dumps(event, default=str))
+        self._producer.poll(0)
+
+    def flush(self) -> None:
+        self._producer.flush(10)
+
+
+class JsonlSink:
+    """Appends one JSON event per line. Shared by all sessions of a run."""
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._file: TextIO = open(path, "w", encoding="utf-8")  # overwrite on each run
+        self._lock = threading.Lock()
+
+    def send(self, key: str, event: dict) -> None:
+        line = json.dumps(event, default=str, ensure_ascii=False)
+        with self._lock:
+            self._file.write(line + "\n")
+            self._file.flush()
+
+    def flush(self) -> None:
+        with self._lock:
+            self._file.flush()
+
+    def close(self) -> None:
+        with self._lock:
+            self._file.close()
+
 
 class SessionEventPublisher(BaseCallbackHandler):
     """One instance per session. Pass it via config={"callbacks": [publisher]}."""
 
-    def __init__(self, producer: Producer, topic: str, *, run_id: str, session_id: str, agent_id: str = "B") -> None:
-        self._producer = producer
-        self._topic = topic
+    def __init__(self, sink: EventSink, *, run_id: str, session_id: str, agent_id: str = "B") -> None:
+        self._sink = sink
         self._run_id = run_id
         self._session_id = session_id
         self._agent_id = agent_id
@@ -53,7 +94,7 @@ class SessionEventPublisher(BaseCallbackHandler):
         self._call_count = 0
         self._last_end = time.monotonic()  # end of previous call (session start for the first)
         self._pending: dict[UUID, dict] = {}
-
+    
     # -- session lifecycle -------------------------------------------------
 
     def start(self) -> None:
@@ -62,7 +103,7 @@ class SessionEventPublisher(BaseCallbackHandler):
 
     def end(self) -> None:
         self._emit("session.ended", {"agent_id": self._agent_id, "call_count": self._call_count})
-        self._producer.flush(10)
+        self._sink.flush()
 
     # -- LangChain callbacks -----------------------------------------------
 
@@ -80,15 +121,15 @@ class SessionEventPublisher(BaseCallbackHandler):
                 "session_call_index": self._call_count,
                 "time_since_previous_call_ms": max(0, int((started - self._last_end) * 1000)),
             }
-        print(f"\n[TOOL CALL] {name}({json.dumps(arguments, default=str)})")
+        #print(f"\n[TOOL CALL] {name}({json.dumps(arguments, default=str)})")
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
         content = getattr(output, "content", output)
-        print(f"[TOOL RESULT] {content}")
+        #print(f"[TOOL RESULT] {content}")
         self._finish(run_id, success=getattr(output, "status", "success") != "error")
 
     def on_tool_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
-        print(f"[TOOL ERROR] {type(error).__name__}: {error}")
+        #print(f"[TOOL ERROR] {type(error).__name__}: {error}")
         self._finish(run_id, success=False)
 
     # -- internals ---------------------------------------------------------
@@ -117,10 +158,8 @@ class SessionEventPublisher(BaseCallbackHandler):
         with self._lock:
             self._sequence += 1
             event = envelope(event_type, data, run_id=self._run_id,
-                             session_id=self._session_id, sequence=self._sequence)
+                            session_id=self._session_id, sequence=self._sequence)
         try:
-            self._producer.produce(self._topic, key=self._session_id,
-                                   value=json.dumps(event, default=str))
-            self._producer.poll(0)
-        except Exception:  # never let Kafka problems break the agent
+            self._sink.send(self._session_id, event)
+        except Exception:  # never let sink problems break the agent
             log.exception("Failed to publish %s", event_type)
