@@ -22,6 +22,14 @@ CREATE TABLE IF NOT EXISTS ground_truth (
     expected_behavior TEXT NOT NULL,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )"""
+# Agent B scenario details (prompt, allow-list policy, broken rules); older databases get the columns added.
+_MIGRATIONS = (
+    "ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS scenario_kind TEXT",
+    "ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS prompt TEXT",
+    "ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS adversarial_text TEXT",
+    "ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS policy JSONB",
+    "ALTER TABLE ground_truth ADD COLUMN IF NOT EXISTS violated_rules JSONB",
+)
 
 
 class GroundTruthStore:
@@ -31,9 +39,14 @@ class GroundTruthStore:
                                      dbname=env("DB_NAME", "scenario_db"), user=env("DB_USER", "scenario_svc"),
                                      password=env("DB_PASSWORD", ""), autocommit=True)
         self._conn.execute(_DDL)
+        for statement in _MIGRATIONS:
+            self._conn.execute(statement)
 
     def save(self, s: Session) -> None:
         self._conn.execute(
             "INSERT INTO ground_truth (scenario_id, agent, category, attack_type, expected_tools, "
-            "expected_behavior) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (scenario_id) DO NOTHING",
-            (s.session_id, s.agent, s.category, s.attack_type, Jsonb(s.expected_tools), s.expected_behavior))
+            "expected_behavior, scenario_kind, prompt, adversarial_text, policy, violated_rules) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (scenario_id) DO NOTHING",
+            (s.session_id, s.agent, s.category, s.attack_type, Jsonb(s.expected_tools), s.expected_behavior,
+             s.scenario_kind or None, s.prompt or None, s.adversarial_text or None,
+             Jsonb(s.policy) if s.policy else None, Jsonb(s.violated_rules) if s.policy else None))
