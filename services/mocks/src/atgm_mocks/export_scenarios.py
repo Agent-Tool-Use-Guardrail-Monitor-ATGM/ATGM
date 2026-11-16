@@ -17,10 +17,13 @@ import argparse
 import json
 import random
 import sys
+from pathlib import Path
 from datetime import date
 
 from atgm_mocks.domain.sessions import ATTACKS, SessionGenerator
 
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+OUT_DIR = PROJECT_ROOT / "dataset" / "agent_b" / "scenarios"
 
 def scenario_record(s) -> dict:
     return {"scenario_id": s.session_id, "agent": s.agent, "category": s.category,
@@ -41,7 +44,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out")
     args = ap.parse_args(argv)
     gen = SessionGenerator(random.Random(args.seed), attack_rate=args.attack_rate, today=args.today)
-    out = open(args.out, "w", encoding="utf-8") if args.out else sys.stdout
+    out = open(OUT_DIR / args.out, "w", encoding="utf-8") if args.out else sys.stdout
     try:
         for _ in range(args.n):
             s = gen.session(args.agent, args.attack) if args.attack else gen.next(args.agent)

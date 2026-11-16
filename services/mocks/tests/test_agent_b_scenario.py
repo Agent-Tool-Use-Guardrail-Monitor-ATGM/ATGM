@@ -1,13 +1,12 @@
-"""Agent B scenarios: prompts, policies and the rules each attack breaks.
+"""Agent B scenarios: prompts, policies and labels.
 
-`violations()` below is a small reference allow-list checker. It is test code, not part of the
-service: it proves that the generator's labels (`violated_rules`) are consistent with the policy,
-i.e. that normal sessions pass and every adversarial session breaks exactly the rules it claims.
+Checking calls against a policy is the job of the separate `allow-list` service; its contract test
+(allow-list/tests/test_contract_mocks.py) replays scenarios exported from this generator and compares
+the flags with `violated_rules`. The tests here only check the generator's own structure.
 """
 import json
 import random
-import re
-from datetime import date, datetime
+from datetime import date
 
 import pytest
 
@@ -17,68 +16,35 @@ from atgm_mocks.domain.sessions import SessionGenerator
 from atgm_mocks.envelope import session_events
 
 TODAY = date(2026, 11, 15)
-_SECRET = re.compile(r"password\s*[:=]|\b\d{4} \d{4} \d{4} \d{4}\b|\bsk-[\w-]{20,}|\beyJ[\w-]{8,}\.", re.I)
 
 
 def gen(seed=0):
     return SessionGenerator(random.Random(seed), attack_rate=0, today=TODAY)
 
 
-def violations(session) -> set[str]:
-    p, found, seen, scans = session.policy, set(), {}, []
-    names = {n.lower() for n in p["allowed_contact_names"]}
-    lo, hi = (date.fromisoformat(d) for d in p["date_window"])
-    for c in session.calls:
-        a, tool = c.arguments, c.tool
-        if tool not in p["allowed_tools"]:
-            found.add("tool_not_allowed")
-        if any(r not in seen for r in p["requires_before"].get(tool, [])):
-            found.add("precondition_missing")
-        seen[tool] = seen.get(tool, 0) + 1
-        if tool in p["max_calls"] and seen[tool] > p["max_calls"][tool]:
-            found.add("max_calls_exceeded")
-        if tool == "find_contact" and a["name"].strip().lower() not in names:
-            found.add("contact_name_not_allowed")
-        if tool == "get_free_slots":
-            try:
-                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", a["date"]):
-                    raise ValueError
-                d = datetime.strptime(a["date"], "%Y-%m-%d").date()
-                if not lo <= d <= hi:
-                    found.add("date_out_of_window")
-            except ValueError:
-                found.add("date_invalid_format")
-        if tool == "sensitive_content_scan":
-            scans.append(a["text"])
-        if tool == "save_draft":
-            if a["to"] not in p["allowed_recipients"]:
-                found.add("recipient_not_allowed")
-            if any(_SECRET.search(a[k.split(".")[1]]) for k in p["no_secrets_in"] if k.startswith("save_draft.")):
-                found.add("secret_in_args")
-            if p["saved_text_must_be_scanned"] and scans and not any(
-                    a["subject"] in t and a["body"] in t for t in scans):
-                found.add("unscanned_content")
-    return found
-
-
-def test_normal_sessions_pass_the_policy_and_have_a_prompt():
+def test_normal_sessions_have_a_prompt_a_policy_and_no_labels():
     g = gen()
     kinds = set()
     for _ in range(1000):
         s = g.session("B")
         kinds.add(s.scenario_kind)
-        assert s.category == "normal" and s.prompt and not s.adversarial_text and not s.violated_rules
-        assert violations(s) == set(), (s.prompt, s.calls)
+        assert s.category == "normal" and s.prompt and s.policy
+        assert not s.adversarial_text and not s.violated_rules
+        # a normal session follows its own policy
+        assert {c.tool for c in s.calls} <= set(s.policy["allowed_tools"])
+        saves = [c for c in s.calls if c.tool == "save_draft"]
+        assert len(saves) <= s.policy["max_calls"]["save_draft"]
+        assert all(c.arguments["to"] in s.policy["allowed_recipients"] for c in saves)
     assert kinds == {"contact_email", "meeting_request", "casual_invite", "explicit_address", "unknown_contact"}
 
 
 @pytest.mark.parametrize("attack", ATTACKS_B)
-def test_each_attack_breaks_exactly_the_rules_it_claims(attack):
+def test_each_attack_is_labelled_and_its_fragment_is_in_the_prompt(attack):
     g = gen(1)
     for _ in range(300):
         s = g.session("B", attack)
+        assert s.category == "adversarial" and s.attack_type == attack
         assert s.violated_rules and set(s.violated_rules) <= set(RULES)
-        assert violations(s) == set(s.violated_rules), (attack, s.prompt, [(c.tool, c.arguments) for c in s.calls])
         assert s.adversarial_text and s.adversarial_text in s.prompt
 
 
