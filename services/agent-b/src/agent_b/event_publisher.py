@@ -1,8 +1,8 @@
 """Replays events saved by the agent (JSONL) to Kafka.
 
 Usage:
-    python publish_events.py events_for_scenario_01.jsonl
-    python publish_events.py events_for_scenario_01.jsonl --topic tool-calls.B --delay 0.1
+    python event_publisher.py events_for_scenario_01.jsonl
+    python event_publisher.py events_for_scenario_01.jsonl --topic tool-calls.B --delay 0.1
 """
 from __future__ import annotations
 
