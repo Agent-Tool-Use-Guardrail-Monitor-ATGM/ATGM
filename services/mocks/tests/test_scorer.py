@@ -3,6 +3,7 @@ import random
 import pytest
 
 from atgm_mocks.domain.scorer import MockScorer
+from atgm_mocks.domain.agent_b import POLICY_ONLY_ATTACKS
 from atgm_mocks.domain.sessions import ATTACKS, SessionGenerator
 from atgm_mocks.envelope import session_events
 from atgm_mocks.run_scorer import score_event
@@ -22,7 +23,12 @@ def trained():
     return g, scorer, rng
 
 
-@pytest.mark.parametrize("agent,attack", [(a, t) for a in "AB" for t in ATTACKS[a]])
+# recipient_hijack / invalid_date change argument values only: tool order, counts and timing look
+# normal, so an anomaly score cannot see them. They are the ground for the allow-list check.
+DETECTABLE = [(a, t) for a in "AB" for t in ATTACKS[a] if t not in POLICY_ONLY_ATTACKS]
+
+
+@pytest.mark.parametrize("agent,attack", DETECTABLE)
 def test_every_attack_type_scores_above_normal_sessions(trained, agent, attack):
     g, scorer, rng = trained
     normal = sorted(max(session_scores(scorer, g.session(agent), rng)) for _ in range(300))
