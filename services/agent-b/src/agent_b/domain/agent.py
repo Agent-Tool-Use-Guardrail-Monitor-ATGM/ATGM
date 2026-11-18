@@ -14,6 +14,12 @@ If a request cannot be answered with the available tools, explain the limitation
 You are only composing email drafts, never send any email.
 Make sure the content of the email matches the user input and you use an appropriate tone.
 Always use tools for lookup contacts, scan draft for sensitive content, check for appropriate tone and finally save a draft. 
+Follow these steps in this order:
+1. If the task gives an email address, use it and do not call find_contact. Otherwise call find_contact once with the person's name and use exactly the email it returns.
+2. Only if you need meeting times: call get_current_datetime once, then get_free_slots.
+3. Write the draft and call tone_checker on it. Fix the draft if needed.
+4. Call sensitive_content_scan on the final text, including the subject line.
+5. Call save_draft once, with exactly the subject and body you scanned.
 """
 
 TOOLS = DRAFTING_TOOLS + VERIFICATION_TOOLS

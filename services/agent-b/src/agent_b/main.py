@@ -65,7 +65,6 @@ def main() -> None:
                 "attack_type": scenario.get("attack_type"),},
             tool_args={tool.name: set(tool.args) for tool in TOOLS},)
         
-        publisher.start()
         scenario_agent = create_agent_b(args.model, today=scenario_date(scenario))
         publisher.start()
         try:
