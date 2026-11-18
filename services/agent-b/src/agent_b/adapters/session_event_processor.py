@@ -84,7 +84,7 @@ class JsonlSink:
 class SessionEventPublisher(BaseCallbackHandler):
     """One instance per session. Pass it via config={"callbacks": [publisher]}."""
 
-    def __init__(self, sink: EventSink, *, run_id: str, session_id: str, agent_id: str = "B",session_info: dict | None = None) -> None:
+    def __init__(self, sink: EventSink, *, run_id: str, session_id: str, agent_id: str = "B", session_info: dict | None = None, tool_args: dict[str, set] | None = None) -> None:
         self._session_info = session_info or {}
         self._sink = sink
         self._run_id = run_id
@@ -95,6 +95,7 @@ class SessionEventPublisher(BaseCallbackHandler):
         self._call_count = 0
         self._last_end = time.monotonic()  # end of previous call (session start for the first)
         self._pending: dict[UUID, dict] = {}
+        self._tool_args = tool_args or {}   # tool name -> the parameters the tool accepts
     
     # -- session lifecycle -------------------------------------------------
 
@@ -112,6 +113,8 @@ class SessionEventPublisher(BaseCallbackHandler):
         started = time.monotonic()
         name = kwargs.get("name") or (serialized or {}).get("name") or "unknown"
         arguments = inputs if inputs is not None else {"input": input_str}
+        if name in self._tool_args:        
+            arguments = {key: value for key, value in arguments.items() if key in self._tool_args[name]}
         with self._lock:
             self._call_count += 1
             self._pending[run_id] = {

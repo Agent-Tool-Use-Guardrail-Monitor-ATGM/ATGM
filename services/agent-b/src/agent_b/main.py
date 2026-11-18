@@ -6,14 +6,17 @@ import os
 import uuid
 import json
 from pathlib import Path
-
+from datetime import date
 from confluent_kafka import Producer
 
 from agent_b.adapters.session_event_processor import SessionEventPublisher, KafkaSink, JsonlSink
-from agent_b.domain.agent import create_agent_b
+from agent_b.domain.agent import create_agent_b, TOOLS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
+def scenario_date(scenario: dict) -> date | None:
+    window = scenario.get("policy", {}).get("date_window")
+    return date.fromisoformat(window[0]) if window else None
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Email drafting assistant agent")
@@ -59,10 +62,14 @@ def main() -> None:
             session_info={
                 "scenario_id": scenario["scenario_id"],
                 "category": scenario.get("category"),
-                "attack_type": scenario.get("attack_type"),},)
+                "attack_type": scenario.get("attack_type"),},
+            tool_args={tool.name: set(tool.args) for tool in TOOLS},)
+        
+        publisher.start()
+        scenario_agent = create_agent_b(args.model, today=scenario_date(scenario))
         publisher.start()
         try:
-            result = agent.invoke(
+            result = scenario_agent.invoke(
                 {"messages": [{"role": "user", "content": scenario["prompt"]}]},
                 config={"recursion_limit": 14, "callbacks": [publisher]},
             )
