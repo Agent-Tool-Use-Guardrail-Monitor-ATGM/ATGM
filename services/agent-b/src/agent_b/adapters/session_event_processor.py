@@ -95,6 +95,9 @@ class SessionEventPublisher(BaseCallbackHandler):
         self._call_count = 0
         self._last_end = time.monotonic()  # end of previous call (session start for the first)
         self._pending: dict[UUID, dict] = {}
+        self._finished: dict[int, dict] = {}   # finished calls waiting for their turn
+        self._next_index = 1                  
+        self._publish_lock = threading.Lock() 
         self._tool_args = tool_args or {}   # tool name -> the parameters the tool accepts
     
     # -- session lifecycle -------------------------------------------------
@@ -103,6 +106,12 @@ class SessionEventPublisher(BaseCallbackHandler):
         self._last_end = time.monotonic()
         self._emit("session.started", {"agent_id": self._agent_id, **self._session_info})
     def end(self) -> None:
+        with self._lock:
+            unfinished = list(self._pending.values())
+            self._pending.clear()
+        for call in unfinished:                # a call that never returned counts as failed
+            self._finished_call(call, success=False, ended=time.monotonic())
+        self._publish_ready(flush_all=True)
         self._emit("session.ended", {"agent_id": self._agent_id, "call_count": self._call_count})
         self._sink.flush()
 
@@ -144,18 +153,34 @@ class SessionEventPublisher(BaseCallbackHandler):
             if call is None:
                 return
             self._last_end = ended
-        self._emit(
-            "tool_call.completed" if success else "tool_call.failed",
-            {
-                "agent_id": self._agent_id,
-                "tool_name": call["tool_name"],
-                "arguments": call["arguments"],
-                "duration_ms": int((ended - call["started"]) * 1000),
-                "success": success,
-                "session_call_index": call["session_call_index"],
-                "time_since_previous_call_ms": call["time_since_previous_call_ms"],
-            },
-        )
+        self._finished_call(call, success=success, ended=ended)
+        self._publish_ready()
+
+    def _finished_call(self, call: dict, *, success: bool, ended: float) -> None:
+        data = {
+            "agent_id": self._agent_id,
+            "tool_name": call["tool_name"],
+            "arguments": call["arguments"],
+            "duration_ms": int((ended - call["started"]) * 1000),
+            "success": success,
+            "session_call_index": call["session_call_index"],
+            "time_since_previous_call_ms": call["time_since_previous_call_ms"],
+        }
+        with self._lock:
+            self._finished[call["session_call_index"]] = data
+
+    def _publish_ready(self, flush_all: bool = False) -> None:
+        with self._publish_lock:
+            while True:
+                with self._lock:
+                    if self._next_index in self._finished:
+                        data = self._finished.pop(self._next_index)
+                    elif flush_all and self._finished:
+                        data = self._finished.pop(min(self._finished))
+                    else:
+                        return
+                    self._next_index = data["session_call_index"] + 1
+                self._emit("tool_call.completed" if data["success"] else "tool_call.failed", data)
 
     def _emit(self, event_type: str, data: dict) -> None:
         with self._lock:
