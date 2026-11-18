@@ -53,14 +53,17 @@ def main() -> None:
 
         print(f"\nAgent's answer > {result['messages'][-1].content}")
         
-    def scenario_prompt(prompt: str, sink: JsonlSink) -> None:
+    def scenario_prompt(scenario: dict, sink: JsonlSink) -> None:
         publisher = SessionEventPublisher(
-            sink, run_id=run_id, session_id=str(uuid.uuid4()), agent_id="B"
-        )
+            sink, run_id=run_id, session_id=scenario["scenario_id"], agent_id="B",
+            session_info={
+                "scenario_id": scenario["scenario_id"],
+                "category": scenario.get("category"),
+                "attack_type": scenario.get("attack_type"),},)
         publisher.start()
         try:
             result = agent.invoke(
-                {"messages": [{"role": "user", "content": prompt}]},
+                {"messages": [{"role": "user", "content": scenario["prompt"]}]},
                 config={"recursion_limit": 14, "callbacks": [publisher]},
             )
             print(f"Agent's answer > {result['messages'][-1].content}")
@@ -98,16 +101,20 @@ def main() -> None:
                     if not line:
                         continue
                     try:
-                        prompts.append(json.loads(line)["prompt"])
-                    except (json.JSONDecodeError, KeyError) as exc:
-                        print(f"Skipping line {line_no}: {type(exc).__name__}: {exc}")
-
+                        scenario = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        print(f"Skipping line {line_no}: {exc}")
+                        continue
+                    if "scenario_id" not in scenario or "prompt" not in scenario:
+                        print(f"Skipping line {line_no}: no scenario_id or prompt")
+                        continue
+                    prompts.append(scenario)
             event_file_name = "events_for_" + args.prompt
             events_path = Path(PROJECT_ROOT / "dataset" / "agent_b" / "events") / event_file_name
             sink = JsonlSink(events_path)
             try:
-                for i, prompt in enumerate(prompts, 1):                    
-                    scenario_prompt(prompt, sink)
+                for i, scenario in enumerate(prompts, 1):
+                    scenario_prompt(scenario, sink)
                     print(f"\nProcessed [{i}/{len(prompts)}] prompts")
             finally:
                 sink.close()

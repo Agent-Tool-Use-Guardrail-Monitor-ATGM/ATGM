@@ -84,7 +84,8 @@ class JsonlSink:
 class SessionEventPublisher(BaseCallbackHandler):
     """One instance per session. Pass it via config={"callbacks": [publisher]}."""
 
-    def __init__(self, sink: EventSink, *, run_id: str, session_id: str, agent_id: str = "B") -> None:
+    def __init__(self, sink: EventSink, *, run_id: str, session_id: str, agent_id: str = "B",session_info: dict | None = None) -> None:
+        self._session_info = session_info or {}
         self._sink = sink
         self._run_id = run_id
         self._session_id = session_id
@@ -99,8 +100,7 @@ class SessionEventPublisher(BaseCallbackHandler):
 
     def start(self) -> None:
         self._last_end = time.monotonic()
-        self._emit("session.started", {"agent_id": self._agent_id})
-
+        self._emit("session.started", {"agent_id": self._agent_id, **self._session_info})
     def end(self) -> None:
         self._emit("session.ended", {"agent_id": self._agent_id, "call_count": self._call_count})
         self._sink.flush()
