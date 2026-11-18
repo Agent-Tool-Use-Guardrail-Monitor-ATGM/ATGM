@@ -5,12 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spacesaving"
 version = "0.1.0"
-description = "Integrated SpaceSaving± frequent-item stream processing for ATGM"
+description = "Integrated SpaceSaving frequent-item stream processing for ATGM"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["confluent-kafka>=2.4"]
 
 [project.optional-dependencies]
-kafka = ["confluent-kafka>=2.4"]
 test = ["pytest>=8"]
 
 [tool.setuptools.packages.find]
