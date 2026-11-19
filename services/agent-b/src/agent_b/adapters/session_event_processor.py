@@ -61,11 +61,10 @@ class KafkaSink:
 class JsonlSink:
     """Appends one JSON event per line. Shared by all sessions of a run."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, append: bool = False) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._file: TextIO = open(path, "w", encoding="utf-8")  # overwrite on each run
+        self._file: TextIO = open(path, "a" if append else "w", encoding="utf-8")
         self._lock = threading.Lock()
-
     def send(self, key: str, event: dict) -> None:
         line = json.dumps(event, default=str, ensure_ascii=False)
         with self._lock:

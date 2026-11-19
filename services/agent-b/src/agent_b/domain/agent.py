@@ -35,7 +35,8 @@ def create_agent_b(model: str, today: date | None = None):
     """`today` fixes the agent's date (for scenarios); None uses the real date."""
     set_today(today)
     return create_agent(
-        model=ChatOllama(model=model, temperature=0),
+        model=ChatOllama(model=model, temperature=0, num_predict=2048, num_ctx=8192,
+                         client_kwargs={"timeout": 300}),
         tools=TOOLS,
         system_prompt=system_prompt(today or date.today()),
     )

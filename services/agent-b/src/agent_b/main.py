@@ -17,11 +17,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 def scenario_date(scenario: dict) -> date | None:
     window = scenario.get("policy", {}).get("date_window")
     return date.fromisoformat(window[0]) if window else None
-
+def keep_finished_sessions(events_path: Path) -> set[str]:
+    """Keeps only the sessions that ended; returns their scenario ids."""
+    if not events_path.is_file():
+        return set()
+    events = [json.loads(line) for line in open(events_path, encoding="utf-8") if line.strip()]
+    finished = {e["session_id"] for e in events if e["event_type"] == "session.ended"}
+    with open(events_path, "w", encoding="utf-8") as f:
+        for event in events:
+            if event["session_id"] in finished:
+                f.write(json.dumps(event, default=str, ensure_ascii=False) + "\n")
+    return finished
 def main() -> None:
     parser = argparse.ArgumentParser(description="Email drafting assistant agent")
     parser.add_argument("--model", default="qwen3:1.7b", help="Installed Ollama model") # qwen2.5:1.5b, qwen3:1.7b
     parser.add_argument("--prompt", default="interactive", help="'interactive' or name of a scenario file, e.g. 'scenario_01.jsonl'")
+    parser.add_argument("--resume", action="store_true", help="continue an interrupted scenario run")
     args = parser.parse_args()
 
     print(f"Model: {args.model}")
@@ -117,7 +128,10 @@ def main() -> None:
                     prompts.append(scenario)
             event_file_name = "events_for_" + args.prompt
             events_path = Path(PROJECT_ROOT / "dataset" / "agent_b" / "events") / event_file_name
-            sink = JsonlSink(events_path)
+            done = keep_finished_sessions(events_path) if args.resume else set()
+            prompts = [s for s in prompts if s["scenario_id"] not in done]
+            print(f"{len(done)} scenarios already done, {len(prompts)} to run")
+            sink = JsonlSink(events_path, append=args.resume)
             try:
                 for i, scenario in enumerate(prompts, 1):
                     scenario_prompt(scenario, sink)
