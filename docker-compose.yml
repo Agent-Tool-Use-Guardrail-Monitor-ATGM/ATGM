@@ -126,7 +126,7 @@ services:
     build: ./services/stream-processing/s10-aci
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      DETECTORS: mock_scorer               # session score = highest score of these detectors
+      DETECTORS: mock_scorer,b1_classifier       # session score = highest score of these detectors
       ALPHA_NORMAL: "0.05"                 # normal sessions not passed (flagged or reviewed), at most
       ALPHA_ATTACK: "0.1"                  # attack sessions not flagged (passed or reviewed), at most
       AUDIT_RATE: "0.3"                    # random share of sessions sent to review to learn from (attacks are rare)
@@ -134,7 +134,37 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+  b1-scorer:                             
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.scorer"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      B1_INPUT_TOPICS: tool-calls.B
+      B1_MODELS_DIR: /models
+      B1_MODEL_KIND: random_forest      
+    volumes:
+      - b1-models:/models
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
+  b1-train:
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--model", "random_forest", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
   review-queue:                            # review queue + simulated reviewer (services/review-queue)
     build: ./services/review-queue
     environment:
@@ -215,6 +245,7 @@ volumes:
   kafka-data:
   pg-data:
   grafana-data:
+  b1-models:
 
 # Named network "atgm": services from other repositories (e.g. datalens-agent) join it
 # to reach kafka:9092 by name. See README, "Connecting a service from another repository".
