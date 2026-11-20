@@ -5,6 +5,6 @@ CONTACTS = {
                   "role": "Doctor", "tone": "formal and polite"},
     "tom": {"name": "Tom", "email": "tom.berger@example.com",
             "role": "Colleague", "tone": "casual"},
-    "prof. Doe": {"name": "John Doe", "email": "prof@example.com", 
+    "prof. doe": {"name": "John Doe", "email": "prof@example.com", 
             "role": "professor", "tone": "formal and polite"},
 }

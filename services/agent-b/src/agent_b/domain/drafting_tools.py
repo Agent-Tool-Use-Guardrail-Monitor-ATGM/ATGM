@@ -3,13 +3,13 @@
 The model selects the tools for each task.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from langchain.tools import tool
 
 from agent_b.adapters.fake_data import CONTACTS
-DRAFTS_DIR = Path("../logs/email_drafts")
+DRAFTS_DIR = Path(__file__).resolve().parents[2] / "logs" / "email_drafts"
 
 @tool
 def find_contact(name: str) -> str:
@@ -23,11 +23,24 @@ def find_contact(name: str) -> str:
         return f"No contact found for '{name}'. Known: {', '.join(CONTACTS)}"
     return f"{c['name']} <{c['email']}>, role: {c['role']}, preferred tone: {c['tone']}"
 
+# The scenario runner sets the date the scenario was written for
+# None means the real date
+_today: date | None = None
+
+
+def set_today(day: date | None) -> None:
+    global _today
+    _today = day
+
+
+def today() -> date:
+    return _today or date.today()
+
+
 @tool
 def get_current_datetime() -> str:
-    """Get the current date, time and weekday. Use before mentioning any dates."""
-    return datetime.now().strftime("%A, %Y-%m-%d %H:%M")
- 
+    """Get today's date, weekday and time. Takes no arguments. Call it before get_free_slots."""
+    return f"{today():%A, %Y-%m-%d} {datetime.now():%H:%M}"
  
 @tool
 def get_free_slots(date: str) -> str:
@@ -55,7 +68,7 @@ def save_draft(to: str, subject: str, body: str) -> str:
         subject: the subject of the email.
         body: the content of the email.
     """
-    DRAFTS_DIR.mkdir(exist_ok=True)
+    DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
     path = DRAFTS_DIR / f"draft_{datetime.now():%Y%m%d_%H%M%S}.txt"
     path.write_text(f"To: {to}\nSubject: {subject}\n\n{body}\n", encoding="utf-8")
     return f"Draft saved to {path}"
