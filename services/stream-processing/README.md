@@ -8,8 +8,8 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 | S02 | `s02-optwin/` | OPTWIN drift on classifier errors | Maxim | drift → `drift` | to do |
 | S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | to do |
 | S04 | `s04-online-forest/` | Online Isolation Forest | Fanni | score → `scores` | ✅ |
-| S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | to do |
-| S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | to do |
+| S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | ✅ |
+| S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | in progress |
 | S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | to do |
 | S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | to do |
 | S09 | `s09-dspot/` | DSPOT alarm thresholds | Áron | alarm → `alerts` | ✅ |
