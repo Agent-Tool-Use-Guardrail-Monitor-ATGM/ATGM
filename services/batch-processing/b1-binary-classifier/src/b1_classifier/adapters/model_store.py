@@ -34,3 +34,13 @@ def announce(folder: Path, metrics: dict, bootstrap: str, topic: str = "model-up
     producer = Producer({"bootstrap.servers": bootstrap})
     producer.produce(topic, key=MODEL_NAME, value=json.dumps(event))
     producer.flush(10)
+
+def load(folder: Path):
+    return joblib.load(folder / "model.joblib")
+
+
+def latest(models_dir: Path, kind: str | None = None) -> Path | None:
+
+    folders = [folder for folder in (models_dir / MODEL_NAME).glob("*")
+               if (folder / "model.joblib").exists() and (kind is None or folder.name.endswith(kind))]
+    return max(folders, key=lambda folder: folder.name, default=None)

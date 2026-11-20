@@ -26,6 +26,17 @@ def test_save_writes_model_and_metrics(tmp_path):
     assert (folder / "model.joblib").is_file()
     assert json.loads((folder / "metrics.json").read_text())["n_sessions"] == 80
 
+def test_latest_picks_newest_of_kind(tmp_path):
+
+    base = tmp_path / model_store.MODEL_NAME
+    for name in ["2026-01-01T00-00-00_random_forest", "2026-02-01T00-00-00_random_forest",
+                 "2026-03-01T00-00-00_logistic_regression"]:
+        (base / name).mkdir(parents=True)
+        (base / name / "model.joblib").write_bytes(b"x")
+
+    assert model_store.latest(tmp_path).name.endswith("logistic_regression")
+    assert model_store.latest(tmp_path, kind="random_forest").name.startswith("2026-02")
+    assert model_store.latest(tmp_path / "empty") is None
 
 def test_loads_the_dataset_files(tmp_path):
     (tmp_path / "events").mkdir()
