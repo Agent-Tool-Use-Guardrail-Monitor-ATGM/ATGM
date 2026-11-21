@@ -8,6 +8,7 @@ from pathlib import Path
 from b1_classifier.adapters import dataset, model_store
 from b1_classifier.domain.features import session_features
 from b1_classifier.domain.training import CLASSES, make_model
+from publish_b1 import publish
 from sklearn.metrics import f1_score
 
 
@@ -37,7 +38,9 @@ def compare(champion, training, holdout, kind):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--champion", required=True, type=Path, help="Trusted local folder containing model.joblib")
+    champion_group = parser.add_mutually_exclusive_group(required=True)
+    champion_group.add_argument("--champion", type=Path, help="Trusted local folder containing model.joblib")
+    champion_group.add_argument("--current-champion", action="store_true", help="Load latest registry random forest")
     parser.add_argument("--dataset-dir", required=True, type=Path)
     parser.add_argument("--source", choices=("dataset", "db"), default="dataset",
                         help="Source of challenger training sessions")
@@ -46,7 +49,15 @@ def main():
                         help="Independent labeled data never used to train or select the champion")
     parser.add_argument("--models-dir", type=Path, default=Path("models"))
     parser.add_argument("--promote", action="store_true", help="Save the challenger if its macro F1 is higher")
+    parser.add_argument("--announce", action="store_true", help="Publish promoted versions to Kafka")
     args = parser.parse_args()
+    if args.announce and not (args.current_champion and args.promote):
+        parser.error("--announce requires --current-champion and --promote")
+    champion = args.champion if args.champion is not None else model_store.latest(args.models_dir, "random_forest")
+    if champion is None:
+        parser.error("No current random forest in the B1 registry")
+    if args.announce:
+        announce_if_pending(args.models_dir, champion)
     if args.source == "db":
         if args.training_scenarios:
             parser.error("--training-scenarios applies only to --source dataset")
@@ -59,12 +70,30 @@ def main():
             parser.error("--training-scenarios is required with --source dataset")
         training = dataset.from_dataset(args.dataset_dir, args.training_scenarios)
     holdout = dataset.from_dataset(args.dataset_dir, args.holdout_scenarios)
-    challenger, report = compare(model_store.load(args.champion), training, holdout, "random_forest")
-    report["champion_version"] = args.champion.name
+    holdout_ids = sorted(row[0] for row in holdout)
+    if args.current_champion and args.promote:
+        for path in champion.parent.glob("*/metrics.json"):
+            previous = json.loads(path.read_text(encoding="utf-8"))
+            if previous.get("eligible_for_promotion") and set(previous.get("holdout_session_ids", ())).intersection(holdout_ids):
+                print(json.dumps({"status": "holdout_already_used", "champion_version": champion.name}))
+                return
+    challenger, report = compare(model_store.load(champion), training, holdout, "random_forest")
+    report["champion_version"] = champion.name
     report["training_source"] = args.source
     if args.promote and report["eligible_for_promotion"]:
-        report["saved_to"] = str(model_store.save(challenger, report, args.models_dir))
+        folder = model_store.save(challenger, {**report, "holdout_session_ids": holdout_ids}, args.models_dir)
+        report["saved_to"] = str(folder)
+        if args.announce:
+            announce_if_pending(args.models_dir, folder)
     print(json.dumps(report, indent=2))
+
+
+def announce_if_pending(models_dir, folder):
+    marker = folder / "kafka-published"
+    metrics = json.loads((folder / "metrics.json").read_text(encoding="utf-8"))
+    if metrics.get("eligible_for_promotion") is True and not marker.exists():
+        publish(models_dir, folder.name, os.getenv("KAFKA_BOOTSTRAP", "localhost:29092"))
+        marker.touch()
 
 
 if __name__ == "__main__":
