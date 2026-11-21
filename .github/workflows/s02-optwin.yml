@@ -3,10 +3,10 @@ name: S02 OPTWIN
 on:
   pull_request:
     branches: [development, main]
-    paths: ["services/stream-processing/s02-optwin/**", ".github/workflows/s02-optwin.yml", ".github/workflows/_service.yml"]
+    paths: ["services/stream-processing/s02-optwin/**", "services/stream-processing/s01-online-bls/src/**", ".github/workflows/s02-optwin.yml", ".github/workflows/_service.yml"]
   push:
     branches: [development, main]
-    paths: ["services/stream-processing/s02-optwin/**", ".github/workflows/s02-optwin.yml", ".github/workflows/_service.yml"]
+    paths: ["services/stream-processing/s02-optwin/**", "services/stream-processing/s01-online-bls/src/**", ".github/workflows/s02-optwin.yml", ".github/workflows/_service.yml"]
   workflow_dispatch:
 
 permissions:
