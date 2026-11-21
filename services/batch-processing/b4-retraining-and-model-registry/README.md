@@ -45,6 +45,8 @@ python services/batch-processing/b4-retraining-and-model-registry/report_b1.py -
 
 Each row represents a saved B4 promotion and includes its holdout size. Rejected challengers and dry runs are absent because they have no saved promotion record. Compare the two scores within each row. Scores across rows may come from different holdouts.
 
+For a paired score plot, install Matplotlib and add `--plot promotions.png` to the report command. Chart rounds follow the CSV row order. Each pair shares a holdout. The chart leaves rounds unconnected because their holdouts may differ.
+
 ## Remaining B4 work
 
 Retrain B1–B3 regularly on the newest **reviewed** labels and only promote a new model if it is better than the current one (champion/challenger).
@@ -53,4 +55,3 @@ Retrain B1–B3 regularly on the newest **reviewed** labels and only promote a n
 - **Steps:** load data → train challenger (B1/B2/B3 code) → evaluate both models on the same held-out set → promote the winner.
 - **Registry:** keep each model version with its metrics (a table in PostgreSQL, or files with a `registry.json`).
 - **Announce:** publish the promoted model on `model-updates` (key = model name) so stream services hot-reload it. Proposed message in `../README.md`.
-- **Report:** a plot of the metrics per retraining round shows whether the feedback loop improves the models.
