@@ -2,6 +2,10 @@
 
 **Owner** Maxim · **Pipeline** P2 (ML classification)
 
+## Paper
+
+Chunyu Lei, Guang-Ze Chen, C. L. Philip Chen, and Tong Zhang. *An accurate and efficient online broad learning system for data stream classification*. Science China Information Sciences, 69 (2026), article 139101. [Published paper](https://doi.org/10.1007/s11432-025-4673-5) · [Open preprint, §3 and Algorithm 1](https://arxiv.org/html/2501.16932v1#S3).
+
 ## What can we tell from the calls seen so far?
 
 S01 estimates the reviewed session class after each completed or failed tool call. Agent A and Agent B have separate model weights because their tools differ.
@@ -12,7 +16,13 @@ S01 estimates the reviewed session class after each completed or failed tool cal
 
 ## How Online-BLS learns
 
-The prefix vector uses the current and previous tool buckets, prefix length, recent repetitions of the same tool, failure fraction and current argument count. The model projects this vector into 16 linear and 16 nonlinear features with a fixed seed. It learns two outputs from one-hot targets. Algorithm 1 updates the Cholesky factor with Givens rotations, then uses two triangular solves to adjust the output weights. [Lei et al., Online-BLS, *Science China Information Sciences*, 2026](https://doi.org/10.1007/s11432-025-4673-5) · [Author preprint, Algorithm 1](https://arxiv.org/html/2501.16932v1#S3).
+S01 implements the base Online-BLS update from Algorithm 1. The weights for both class outputs start at zero. The model keeps a Cholesky factor of the ridge-regularized feature matrix so it can learn from one new labeled example at a time.
+
+1. **Build features (§3.2).** The current and previous tool buckets, prefix length, recent repetitions, failure fraction, and argument count form the input. A fixed linear map yields 16 features. A second map applies `tanh` to produce 16 enhancement features. The combined 32-element vector is `a`.
+2. **Predict (§3.2).** Multiply `a` by the current weight matrix `W` to obtain two class scores. S01 uses the attack score minus the normal score as its classification margin.
+3. **Update (§§3.3–3.4).** When the session verdict is available, encode it as a one-hot vector `y`. Add the new sample's contribution `a aᵀ` to the regularized feature matrix by updating its Cholesky factor with Givens rotations. Compute the weight correction from the outer product of `a` and the prediction residual `y − Wᵀa`. Two triangular solves give the correction to add to `W`, reusing the updated factor.
+
+ATGM adapts the paper's test-then-train loop to delayed labels. The service saves the final prefix and its original prediction. When the verdict arrives, it evaluates that original prediction and computes the training residual using the current weights. [Model implementation](src/online_bls/domain/model.py) · [Session and label handling](src/online_bls/service.py).
 
 The replay tests cover delayed feedback, duplicate delivery and recovery. The numerical test compares each update to a batch ridge solution.
 
