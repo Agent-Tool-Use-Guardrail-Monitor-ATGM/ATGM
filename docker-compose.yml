@@ -188,6 +188,38 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: "no"
+  b3-scorer:                               # B3 Markov chain: scores finished Agent B sessions (services/batch-processing/b3-markov-chain)
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.scorer"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      B3_INPUT_TOPICS: tool-calls.B
+      B3_MODELS_DIR: /models
+      B3_MODEL_KIND: additive              # smoothing suffix of the model version; empty = newest of any kind
+    volumes:
+      - b3-models:/models
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  b3-train:                                # trains on normal sessions, publishes the table to model-updates (key b3-markov-chain)
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--smoothing", "additive", "--orders", "1", "2", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b3-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
   review-queue:                            # review queue + simulated reviewer (services/review-queue)
     build: ./services/review-queue
     environment:
@@ -271,6 +303,7 @@ volumes:
   pg-data:
   grafana-data:
   b1-models:
+  b3-models:
 
 # Named network "atgm": services from other repositories (e.g. datalens-agent) join it
 # to reach kafka:9092 by name. See README, "Connecting a service from another repository".
