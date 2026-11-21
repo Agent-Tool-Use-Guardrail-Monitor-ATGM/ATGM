@@ -20,7 +20,8 @@ Every output event has `data.agent_id = "A"` and `data.source_event_id`, and use
 
 - **Transactions:** DataLens writes transactionally, so the adapter reads with `isolation.level=read_committed` and never sees aborted records.
 - **At least once:** DataLens may redeliver events. The adapter drops repeated `event_id`s and derives its output ids from the source ids, so a replay produces identical events, which the storage sink stores once.
-- **Offsets** are committed only after a batch has been published.
+- **Restart recovery:** The adapter checks Kafka delivery, saves its join state and processed offsets, then commits consumer offsets. Keep the Compose state volume and use one adapter replica per consumer group. For local runs set `ADAPTER_STATE` to a persistent file dedicated to that source topic and group.
+- A crash after output delivery and before the checkpoint can replay outputs with the same event IDs. Consumers should deduplicate those IDs.
 
 ## Run and test
 

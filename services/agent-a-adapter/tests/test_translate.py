@@ -71,6 +71,23 @@ def test_result_without_its_request_is_still_reported():
     assert out[1]["data"]["tool_name"] == "unknown" and out[1]["data"]["arguments"] == {}
 
 
+@pytest.mark.parametrize("split", (3, 5))
+def test_restart_between_request_and_outcome(tmp_path, split):
+    events = session()
+    path = tmp_path / "state.sqlite3"
+    translator = Translator()
+    before_restart = run(events[:split], translator)
+    translator.offsets["0"] = split
+    translator.checkpoint(path)
+    translator.checkpoint(path)
+
+    resumed = Translator()
+    resumed.restore(path)
+    assert resumed.offsets == {"0": split}
+    after_restart = run(events[split - 1:], resumed)
+    assert before_restart + after_restart == run(events)
+
+
 def test_sessions_are_independent_and_memory_is_bounded():
     tr = Translator(max_sessions=3)
     for i in range(10):

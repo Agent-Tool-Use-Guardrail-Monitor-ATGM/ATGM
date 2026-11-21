@@ -104,6 +104,9 @@ services:
     build: ./services/agent-a-adapter
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      ADAPTER_STATE: /state/adapter.sqlite3
+    volumes:
+      - agent-a-adapter-state:/state
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -210,6 +213,7 @@ services:
   # Services in other repositories (e.g. datalens-agent) join the "atgm" network instead.
 
 volumes:
+  agent-a-adapter-state:
   kafka-data:
   pg-data:
   grafana-data:
