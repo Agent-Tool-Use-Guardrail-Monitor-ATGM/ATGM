@@ -95,3 +95,17 @@ def test_detector_table_roundtrip_and_v01_compatibility():
     seq_only = from_table(to_table(fit_detector(TRAIN, [1], Params()), TRAIN, {}, label_filter="x", seed=0))
     assert seq_only.arguments is None and "arguments" not in to_table(fit_detector(TRAIN, [1], Params()), TRAIN, {}, label_filter="x", seed=0)
     assert seq_only.score(1, session)["score"] == seq_only.score(1, session)["mean_nll"]
+
+
+def test_mock_argument_names_and_whitespace_do_not_count_as_changed():
+    from b3_markov.domain.arguments import text_arg
+    calls = [call("tone_checker", draft=TEXT, tone="warm"), call("sensitive_content_scan", draft=TEXT + "\n"),
+             call("save_draft", to="tom@example.com", subject="s", body="  " + TEXT.replace(" ", "  "))]
+    f = flags(calls)
+    assert f[1]["text_vs_checked"] == "same" and f[2]["body_vs_checked"] == "same"
+    assert text_arg({"draft": "x"}, "text", "draft") == "x" and text_arg({}, "text") is None
+
+
+def test_scan_without_any_text_is_unchecked_not_changed():
+    f = flags([call("tone_checker", draft=TEXT), call("sensitive_content_scan")])
+    assert f[1]["text_vs_checked"] == "unchecked"

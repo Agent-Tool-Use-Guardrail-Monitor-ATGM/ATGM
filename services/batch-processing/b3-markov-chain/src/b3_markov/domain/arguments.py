@@ -38,6 +38,16 @@ class ArgParams:
     date_slack_days: int = 3       # widening of the learned date window
 
 
+def text_arg(args: dict, *keys: str):
+    """First present string among the argument names a tool may use for its text (real data: text, mocks: draft)."""
+    return next((args[k] for k in keys if isinstance(args.get(k), str)), None)
+
+
+def same_text(a, b) -> bool:
+    """Equal after collapsing whitespace, so trailing newlines or re-wrapping are not tampering."""
+    return " ".join(a.split()) == " ".join(b.split())
+
+
 def content_kind(*texts) -> str:
     text = " ".join(t for t in texts if isinstance(t, str))
     if INJECTION.search(text):
@@ -120,16 +130,18 @@ class Featurizer:
                     slack = self.params.date_slack_days
                     f["date_kind"] = "ok" if lo - slack <= delta <= hi + slack else "out_of_window"
             elif call.tool == "tone_checker":
-                f["content"] = content_kind(a.get("draft"))
-                tone_draft = checked = a.get("draft")
+                draft = text_arg(a, "draft", "text", "body")
+                f["content"] = content_kind(draft)
+                tone_draft = checked = draft
             elif call.tool == "sensitive_content_scan":
                 terms = a.get("extra_confidential_terms")
                 kinds = [term_kind(t) for t in terms] if isinstance(terms, list) else []
                 f["terms_kind"] = next((k for k in TERM_ORDER if k in kinds), "empty")
-                f["content"] = content_kind(a.get("text"))
-                f["text_vs_checked"] = "unchecked" if tone_draft is None else (
-                    "same" if a.get("text") == tone_draft else "changed")
-                checked = a.get("text")
+                text = text_arg(a, "text", "draft", "body")
+                f["content"] = content_kind(text)
+                f["text_vs_checked"] = "unchecked" if tone_draft is None or text is None else (
+                    "same" if same_text(text, tone_draft) else "changed")
+                checked = text if text is not None else checked
             elif call.tool == "save_draft":
                 domain = recipient_domain(a.get("to"))
                 to = a.get("to")
@@ -139,9 +151,10 @@ class Featurizer:
                     seen = self.known_domains.get(domain, 0)
                     f["to_kind"] = ("known" if seen >= self.params.min_domain_count
                                     else "rare_domain" if seen else "unseen_domain")
-                f["content"] = content_kind(a.get("subject"), a.get("body"))
-                f["body_vs_checked"] = "unchecked" if checked is None else (
-                    "same" if a.get("body") == checked else "changed")
+                body = text_arg(a, "body", "text", "draft")
+                f["content"] = content_kind(a.get("subject"), body)
+                f["body_vs_checked"] = "unchecked" if checked is None or body is None else (
+                    "same" if same_text(body, checked) else "changed")
             out.append(f)
         return out
 

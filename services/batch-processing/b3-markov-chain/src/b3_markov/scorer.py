@@ -61,6 +61,11 @@ class Scorer:
         return score_event(finished, result, self.version, self.threshold, run_id=event.get("run_id"))
 
 
+def message_key(scored: dict) -> str | None:
+    """Kafka key of an anomaly.scored message: the agent id (A or B), None if the event has none."""
+    return scored["data"].get("agent_id") or None
+
+
 def main() -> None:
     from confluent_kafka import Consumer, Producer
 
@@ -93,7 +98,7 @@ def main() -> None:
                 continue
             scored = scorer.handle(event)
             if scored:
-                producer.produce("scores", key=scored["session_id"], value=json.dumps(scored))
+                producer.produce("scores", key=message_key(scored), value=json.dumps(scored))
                 producer.poll(0)
                 log.info("session %s scored %.3f", scored["session_id"], scored["data"]["score"])
     finally:

@@ -34,19 +34,47 @@ precision/recall/F1, recall per attack type, 95/99/99.5 sensitivity), all smooth
 and baselines (bag of tools = order 0; stide-style unseen-bigram fraction).
 
 ## Run
+Locally (Python 3.10+, no runtime dependencies):
 ```
-pip install -e ".[test]" && pytest
-python -m b3_markov.main                                  # dataset files
+python -m b3_markov.main                                  # dataset files (same path as B1)
 python -m b3_markov.main --events-file events.jsonl --orders 1 2 3
 python -m b3_markov.main --source db --announce           # as in the Docker image
-docker build -t b3-markov-chain . && docker run --rm --network host -e ANALYTICS_DB=... b3-markov-chain
 python -m b3_markov.scorer                                # live scoring: tool-calls.B + model-updates -> scores
 ```
+(Run from `src/` or after `pip install -e .`.)
+
+### In Docker
+From the repository root, with the stack running (`docker compose up -d`):
+```
+docker compose up -d b3-scorer                            # scorer: tool-calls.B -> scores (key = agent_id)
+docker compose --profile batch run --rm b3-train          # train on ./dataset/agent_b and publish to model-updates
+docker compose logs -f b3-scorer                          # "B3 model loaded: ...", then one line per scored session
+```
+- `b3-train` prints the metrics, saves `transition_table.json` and `metrics.json` to the `b3-models` volume and
+  publishes one `model.trained` message (key `b3-markov-chain`, table embedded) to `model-updates`. The scorer
+  reloads the model from that message; if it starts later it loads the newest model from the volume.
+- Results: Kafka UI (http://localhost:8080) topics `model-updates` and `scores`; the scorer log; the files in the
+  volume: `docker compose run --rm --entrypoint ls b3-scorer /models/b3-markov-chain`.
+- After changing the code: `docker compose build b3-scorer b3-train`, then restart `b3-scorer`.
+- Standalone image: `docker build -t b3-markov-chain .` (default command: `--source db --announce`; needs
+  `ANALYTICS_DB` and `KAFKA_BOOTSTRAP`).
+
+### Tests
+The tests need only pytest and no Kafka or Docker (Kafka is replaced by a fake producer). They are not part of the image.
+```
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install pytest        # or: python -m pip install -e ".[test]"
+pytest
+```
+Variants: `pytest -q`, `pytest tests/test_arguments.py`, `pytest -k tamper`.
+
 Options are CLI flags (`--orders --smoothing --alpha --epsilon --percentile --folds --seed --bootstrap
---normal-by --models-dir --announce`); env: `ANALYTICS_DB`, `KAFKA_BOOTSTRAP` (localhost:29092),
-`MODELS_DIR`, `DATASET_DIR`; scorer: `B3_INPUT_TOPICS`, `B3_MODELS_DIR`, `B3_MODEL_KIND`.
+--normal-by --no-arguments --score --arg-alpha --min-domain-count --date-slack-days --models-dir --announce`); env:
+`ANALYTICS_DB`, `KAFKA_BOOTSTRAP` (localhost:29092), `MODELS_DIR`, `DATASET_DIR`; scorer: `B3_INPUT_TOPICS`,
+`B3_MODELS_DIR`, `B3_MODEL_KIND`.
 Output: `models/b3-markov-chain/<UTC time>_<smoothing>/{transition_table.json, metrics.json}`; `--announce`
 publishes one `model.trained` message (key `b3-markov-chain`) to `model-updates` with the table embedded.
+The scorer publishes `anomaly.scored` to `scores` with key = agent id.
 
 ## Next
 Run on the full 269 + 231 dataset; decide the live order/threshold (`calibration.primary_order`, `threshold`).

@@ -64,7 +64,7 @@ def main() -> None:
     normal, adversarial = split_sessions(sessions, args.normal_by)
     if not normal:
         raise SystemExit("no normal sessions to train on")
-    print(f"{len(sessions)} sessions: {len(normal)} normal (training), {len(adversarial)} other (evaluation)")
+    # print(f"{len(sessions)} sessions: {len(normal)} normal (training), {len(adversarial)} other (evaluation)")
 
     params = Params(args.smoothing, args.alpha, args.epsilon)
     arg_params = None if args.no_arguments else ArgParams(args.arg_alpha, args.min_domain_count, args.date_slack_days)
@@ -83,10 +83,10 @@ def main() -> None:
                "data": profile(normal, adversarial), **experiment}
     version = model_store.version_name(args.smoothing)
     folder = model_store.save(table, metrics, Path(args.models_dir), version)
-    for name, r in experiment["results"].items():
-        print(f"{name}: threshold {r['threshold']:.3f}  ROC-AUC {r['roc_auc']:.3f}  PR-AUC {r['pr_auc']:.3f}  "
-              f"recall {r['at_threshold']['recall']}  fpr {r['at_threshold']['fpr']}")
-    print(f"Model saved to {folder}")
+    #for name, r in experiment["results"].items():
+    #    print(f"{name}: threshold {r['threshold']:.3f}  ROC-AUC {r['roc_auc']:.3f}  PR-AUC {r['pr_auc']:.3f}  "
+    #          f"recall {r['at_threshold']['recall']}  fpr {r['at_threshold']['fpr']}")
+    #print(f"Model saved to {folder}")
     if args.announce:
         model_store.announce(folder, metrics, table, env("KAFKA_BOOTSTRAP", "localhost:29092"))
 

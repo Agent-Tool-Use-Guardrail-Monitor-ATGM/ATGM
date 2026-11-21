@@ -1,5 +1,5 @@
 from b3_markov.adapters import model_store
-from b3_markov.scorer import Scorer
+from b3_markov.scorer import Scorer, message_key
 from helpers import FULL, SHORT, events
 from test_model_store import SESSIONS, TABLE
 
@@ -33,3 +33,10 @@ def test_update_for_other_model_or_kind_is_ignored(tmp_path):
     scorer.on_model_update({"data": {"model": "b1-binary", "version": "x_floor", "transition_table": TABLE}})
     scorer.on_model_update({"data": {"model": "b3-markov-chain", "version": "x_additive", "transition_table": TABLE}})
     assert scorer.model is None
+
+
+def test_scores_are_keyed_by_agent_id(tmp_path):
+    model_store.save(TABLE, {}, tmp_path, "v1_additive")
+    (scored,) = run(Scorer(tmp_path), events("a", FULL))
+    assert message_key(scored) == "B"
+    assert message_key({"data": {}}) is None
