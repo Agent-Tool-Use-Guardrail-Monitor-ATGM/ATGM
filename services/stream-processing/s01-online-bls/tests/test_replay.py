@@ -59,13 +59,18 @@ class Record:
 class Producer:
     def __init__(self, fail=False):
         self.events = []
+        self.errors = []
         self.fail = fail
 
     def produce(self, topic, *, key, value, on_delivery):
-        assert topic == "scores"
         event = json.loads(value)
         assert key == event["data"]["agent_id"]
-        self.events.append(event)
+        if event["event_type"] == "classifier.error":
+            assert topic == "classifier-errors"
+            self.errors.append(event)
+        else:
+            assert topic == "scores"
+            self.events.append(event)
         on_delivery("delivery failed" if self.fail else None, None)
 
     def flush(self, _):
@@ -117,6 +122,7 @@ def test_kafka_replay_scores_before_label_and_trains_final_prefix_once(tmp_path)
            ("tool-calls.B", call("normal", 1, agent="B")))
     assert sum(restored.models["A"].class_counts) == 3
     assert restored._load_session("A", "unreviewed").error == 1
+    assert [(event["session_id"], event["data"]["error"]) for event in producer.errors] == [("unreviewed", 1)]
     assert restored.models["B"].class_counts == (0, 0)
     assert len(producer.events) == 6
     restored.close()
