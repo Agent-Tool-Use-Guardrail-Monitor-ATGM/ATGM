@@ -25,6 +25,8 @@ python services/batch-processing/b4-retraining-and-model-registry/promote_b1.py 
 
 Replace the scenario names with existing files in the B1 dataset layout. The default is a dry run. Add `--promote` to save a winning challenger to the local registry. Run promotion with a single registry writer and pass the current champion. A scorer restart can pick up the saved version through the existing B1 registry lookup. Kafka publication and automatic retraining remain separate B4 steps.
 
+To train the challenger on reviewed Agent B sessions from PostgreSQL, set `ANALYTICS_DB` and replace `--training-scenarios TRAINING.jsonl` with `--source db`. Keep the independent `--holdout-scenarios` file. The same overlap check and strict macro F1 gate apply, and the report records the training source.
+
 ## B4-03 publish a promoted version
 
 Install the B1 Kafka extra, point `KAFKA_BOOTSTRAP` at the broker, and run:

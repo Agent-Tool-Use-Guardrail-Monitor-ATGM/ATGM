@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from b1_classifier.adapters import dataset, model_store
@@ -38,16 +39,29 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--champion", required=True, type=Path, help="Trusted local folder containing model.joblib")
     parser.add_argument("--dataset-dir", required=True, type=Path)
-    parser.add_argument("--training-scenarios", required=True)
+    parser.add_argument("--source", choices=("dataset", "db"), default="dataset",
+                        help="Source of challenger training sessions")
+    parser.add_argument("--training-scenarios", help="Training scenario file for dataset mode")
     parser.add_argument("--holdout-scenarios", required=True,
                         help="Independent labeled data never used to train or select the champion")
     parser.add_argument("--models-dir", type=Path, default=Path("models"))
     parser.add_argument("--promote", action="store_true", help="Save the challenger if its macro F1 is higher")
     args = parser.parse_args()
-    training = dataset.from_dataset(args.dataset_dir, args.training_scenarios)
+    if args.source == "db":
+        if args.training_scenarios:
+            parser.error("--training-scenarios applies only to --source dataset")
+        conninfo = os.environ.get("ANALYTICS_DB")
+        if not conninfo:
+            parser.error("ANALYTICS_DB is required with --source db")
+        training = dataset.from_database(conninfo)
+    else:
+        if not args.training_scenarios:
+            parser.error("--training-scenarios is required with --source dataset")
+        training = dataset.from_dataset(args.dataset_dir, args.training_scenarios)
     holdout = dataset.from_dataset(args.dataset_dir, args.holdout_scenarios)
     challenger, report = compare(model_store.load(args.champion), training, holdout, "random_forest")
     report["champion_version"] = args.champion.name
+    report["training_source"] = args.source
     if args.promote and report["eligible_for_promotion"]:
         report["saved_to"] = str(model_store.save(challenger, report, args.models_dir))
     print(json.dumps(report, indent=2))
