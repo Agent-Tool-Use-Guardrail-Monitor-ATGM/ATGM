@@ -22,10 +22,14 @@ The ATGM detectors expect one event per finished tool call with the tool name an
 """
 from __future__ import annotations
 
+import json
+import sqlite3
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from contextlib import closing
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 
 AGENT_ID = "A"
 SCHEMA_VERSION = "1.0"
@@ -61,6 +65,34 @@ class Translator:
         self.max_sessions, self.max_seen = max_sessions, max_seen
         self._sessions: OrderedDict[str, _Session] = OrderedDict()
         self._seen: OrderedDict[str, None] = OrderedDict()              # recent source event ids
+        self.offsets: dict[str, int] = {}
+
+    def restore(self, path: Path) -> None:
+        if not path.exists():
+            return
+        with closing(sqlite3.connect(path)) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+            row = db.execute("SELECT state FROM checkpoint WHERE id = 1").fetchone()
+        if row is None:
+            return
+        state = json.loads(row[0])
+        self.offsets = state["offsets"]
+        self._seen = OrderedDict.fromkeys(state["seen"])
+        for sid, session in state["sessions"]:
+            session["started"] = _time(session["started"])
+            session["last_end"] = _time(session["last_end"])
+            for request in session["pending"].values():
+                request["at"] = _time(request["at"])
+            self._sessions[sid] = _Session(**session)
+
+    def checkpoint(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        state = {"offsets": self.offsets, "seen": list(self._seen),
+                 "sessions": [(sid, asdict(session)) for sid, session in self._sessions.items()]}
+        with closing(sqlite3.connect(path)) as db, db:
+            db.execute("CREATE TABLE IF NOT EXISTS checkpoint (id INTEGER PRIMARY KEY, state TEXT NOT NULL)")
+            db.execute("INSERT OR REPLACE INTO checkpoint VALUES (1, ?)",
+                       (json.dumps(state, default=datetime.isoformat),))
 
     def translate(self, event: dict) -> dict | None:
         """The ATGM event for one DataLens event, or None (requests, duplicates, non-envelopes)."""
