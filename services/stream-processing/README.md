@@ -4,7 +4,7 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 
 | # | Folder | Algorithm | Owner | Publishes | Status |
 |---|---|---|---|---|---|
-| S01 | `s01-online-bls/` | Online-BLS classifier | Maxim | score → `scores` | to do |
+| S01 | [`s01-online-bls/`](s01-online-bls/README.md) | Online-BLS classifier | Maxim | score → `scores` | implemented |
 | S02 | `s02-optwin/` | OPTWIN drift on classifier errors | Maxim | drift → `drift` | to do |
 | S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | to do |
 | S04 | `s04-online-forest/` | Online Isolation Forest | Fanni | score → `scores` | ✅ |

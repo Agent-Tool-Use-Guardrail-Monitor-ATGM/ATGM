@@ -100,6 +100,18 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  online-bls:
+    build: ./services/stream-processing/s01-online-bls
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ONLINE_BLS_STATE: /state/online-bls.sqlite3
+    volumes:
+      - online-bls-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   online-forest:
     build: ./services/stream-processing/s04-online-forest
     environment:
@@ -241,6 +253,7 @@ services:
   # Services in other repositories (e.g. datalens-agent) join the "atgm" network instead.
 
 volumes:
+  online-bls-state:
   kafka-data:
   pg-data:
   grafana-data:

@@ -1,0 +1,21 @@
+name: S01 Online-BLS
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/stream-processing/s01-online-bls/**", ".github/workflows/s01-online-bls.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/stream-processing/s01-online-bls/**", ".github/workflows/s01-online-bls.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/stream-processing/s01-online-bls
+      image: atgm-online-bls
