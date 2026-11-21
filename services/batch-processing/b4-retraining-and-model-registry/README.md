@@ -15,6 +15,26 @@ python services/batch-processing/b4-retraining-and-model-registry/evaluate_b1.py
 
 Omit `--dataset-dir` and set `ANALYTICS_DB` to evaluate reviewed Agent B sessions. The command prints evaluation metrics. The baseline is fitted for the comparison, so this report does not compare against a deployed champion.
 
+## B4-02 champion comparison
+
+Use a trusted, locally stored Agent B champion artifact and a separate labeled holdout that has never been used to train or select that champion. The job rejects session IDs shared by the challenger training set and the holdout. It compares both models on the same holdout and requires a strict macro F1 improvement.
+
+```sh
+python services/batch-processing/b4-retraining-and-model-registry/promote_b1.py --champion models/b1-binary/CHAMPION_VERSION --dataset-dir dataset/agent_b --training-scenarios TRAINING.jsonl --holdout-scenarios HOLDOUT.jsonl
+```
+
+Replace the scenario names with existing files in the B1 dataset layout. The default is a dry run. Add `--promote` to save a winning challenger to the local registry. Run promotion with a single registry writer and pass the current champion. A scorer restart can pick up the saved version through the existing B1 registry lookup. Kafka publication and automatic retraining remain separate B4 steps.
+
+## B4-03 publish a promoted version
+
+Install the B1 Kafka extra, point `KAFKA_BOOTSTRAP` at the broker, and run:
+
+```sh
+python services/batch-processing/b4-retraining-and-model-registry/publish_b1.py VERSION --models-dir models
+```
+
+Use the version directory name from B4-02's `saved_to` output. The scorer needs access to the same registry files. Publication sends `model.trained` to `model-updates` and succeeds only after broker acknowledgement. If delivery fails, retry this job with the same version.
+
 ## Remaining B4 work
 
 Retrain B1–B3 regularly on the newest **reviewed** labels and only promote a new model if it is better than the current one (champion/challenger).
