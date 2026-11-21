@@ -35,6 +35,8 @@ python services/batch-processing/b4-retraining-and-model-registry/publish_b1.py 
 
 Use the version directory name from B4-02's `saved_to` output. The scorer needs access to the same registry files. Publication sends `model.trained` to `model-updates` and succeeds only after broker acknowledgement. If delivery fails, retry this job with the same version.
 
+Verified in isolated Docker Compose with a fixture model. The scorer started with an empty registry, then loaded the exact published version without restarting. Wait for the scorer's Kafka subscription to become active before publishing to a newly started scorer. Broker acknowledgement confirms publication. The scorer log confirms reload.
+
 ## B4-04 report promoted versions
 
 Export the champion and challenger macro F1 scores from the local registry:
