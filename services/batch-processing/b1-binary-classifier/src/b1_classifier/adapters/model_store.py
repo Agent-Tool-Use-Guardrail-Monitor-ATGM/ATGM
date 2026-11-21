@@ -32,8 +32,11 @@ def announce(folder: Path, metrics: dict, bootstrap: str, topic: str = "model-up
         "data": {"model": MODEL_NAME, "version": folder.name, "path": str(folder), "metrics": metrics},
     }
     producer = Producer({"bootstrap.servers": bootstrap})
-    producer.produce(topic, key=MODEL_NAME, value=json.dumps(event))
-    producer.flush(10)
+    delivery = []
+    producer.produce(topic, key=MODEL_NAME, value=json.dumps(event),
+                     on_delivery=lambda error, _: delivery.append(error))
+    if producer.flush(10) or delivery != [None]:
+        raise RuntimeError(f"Kafka did not acknowledge model {folder.name}: {delivery}")
 
 def load(folder: Path):
     return joblib.load(folder / "model.joblib")
