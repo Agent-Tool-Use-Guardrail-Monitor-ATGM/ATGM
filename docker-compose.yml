@@ -209,6 +209,13 @@ services:
               "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
               "--smoothing", "additive", "--orders", "1", "2", "--models-dir", "/models", "--announce"]
     profiles: ["batch"]
+  b4-retrain:
+    build: ./services/batch-processing/b1-binary-classifier
+    profiles: ["batch"]
+    entrypoint: ["python", "/b4/promote_b1.py", "--source", "db",
+                 "--current-champion", "--dataset-dir", "/dataset", "--models-dir", "/models",
+                 "--promote", "--announce"]
+    command: ["--holdout-scenarios", "b4-holdout.jsonl"]
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
@@ -218,6 +225,14 @@ services:
     depends_on:
       kafka-init:
         condition: service_completed_successfully
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+      - ./services/batch-processing/b4-retraining-and-model-registry:/b4:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     restart: "no"
 
   review-queue:                            # review queue + simulated reviewer (services/review-queue)
