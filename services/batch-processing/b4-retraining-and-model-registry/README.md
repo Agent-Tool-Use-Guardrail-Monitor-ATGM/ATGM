@@ -35,6 +35,16 @@ python services/batch-processing/b4-retraining-and-model-registry/publish_b1.py 
 
 Use the version directory name from B4-02's `saved_to` output. The scorer needs access to the same registry files. Publication sends `model.trained` to `model-updates` and succeeds only after broker acknowledgement. If delivery fails, retry this job with the same version.
 
+## B4-04 report promoted versions
+
+Export the champion and challenger macro F1 scores from the local registry:
+
+```sh
+python services/batch-processing/b4-retraining-and-model-registry/report_b1.py --models-dir models > b4-promotions.csv
+```
+
+Each row represents a saved B4 promotion and includes its holdout size. Rejected challengers and dry runs are absent because they have no saved promotion record. Compare the two scores within each row. Scores across rows may come from different holdouts.
+
 ## Remaining B4 work
 
 Retrain B1–B3 regularly on the newest **reviewed** labels and only promote a new model if it is better than the current one (champion/challenger).
