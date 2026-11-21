@@ -112,6 +112,18 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  optwin:
+    build: ./services/stream-processing/s02-optwin
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      OPTWIN_STATE: /state/optwin.sqlite3
+    volumes:
+      - optwin-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   online-forest:
     build: ./services/stream-processing/s04-online-forest
     environment:
@@ -254,6 +266,7 @@ services:
 
 volumes:
   online-bls-state:
+  optwin-state:
   kafka-data:
   pg-data:
   grafana-data:

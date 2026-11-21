@@ -33,8 +33,9 @@ The replay tests cover delayed feedback, duplicate delivery and recovery. The nu
 | Read | `tool-calls.A`, `tool-calls.B` | One prediction per `tool_call.completed` or `tool_call.failed`, ordered by `data.session_call_index`. `session.ended` marks the final prefix. |
 | Read | `labels` | `review.labelled` joins on agent and session. `false_alarm` maps to class `0`, `attack` to class `1`. |
 | Write | `scores` | `anomaly.scored` keyed by agent ID. `scored_event_id` identifies the original call, `detector` is `online_bls`, and `model_version` is `bls-1`. |
+| Write | `classifier-errors` | One `classifier.error` per reviewed session whose final prediction was ready. `data.error` is 0 for correct and 1 for incorrect. S02 consumes this result. |
 
-`data.score` is a risk score in `[0, 1]`, with higher values meaning more suspicious. It is the output margin transformed by `(1 + tanh(margin)) / 2`. The class is `1` for margins above zero and `0` otherwise. Use the score for ranking rather than probability estimates. `data.ready` becomes true after the agent model has learned both classes. S02 can use `predicted_class`, `ready` and `session_call_index` to select the final pre-label prediction for error monitoring.
+`data.score` is a risk score in `[0, 1]`, with higher values meaning more suspicious. It is the output margin transformed by `(1 + tanh(margin)) / 2`. The class is `1` for margins above zero and `0` otherwise. Use the score for ranking rather than probability estimates. `data.ready` becomes true after the agent model has learned both classes. S01 computes the error from the saved pre-label prediction and commits it to the outbox alongside the training update.
 
 Parallel tool calls can finish out of order. S01 holds later calls until earlier indexes arrive, or scores all available calls in index order when `session.ended` arrives. Consumers ordering scores within a session should use `data.session_call_index`. The envelope's `sequence` identifies the source event's position in the producer stream.
 

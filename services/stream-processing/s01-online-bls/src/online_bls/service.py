@@ -18,6 +18,7 @@ MODEL_VERSION = "bls-1"
 TOOL_TOPICS = ("tool-calls.A", "tool-calls.B")
 LABEL_TOPIC = "labels"
 SCORE_TOPIC = "scores"
+ERROR_TOPIC = "classifier-errors"
 TOOL_EVENTS = ("tool_call.completed", "tool_call.failed")
 VERDICTS = {"false_alarm": 0, "attack": 1}
 log = logging.getLogger(__name__)
@@ -46,6 +47,7 @@ class Session:
     label: int | None = None
     trained: bool = False
     error: int | None = None
+    run_id: str | None = None
 
 
 class ClassifierService:
@@ -168,6 +170,7 @@ class ClassifierService:
         session.prediction = int(margin > 0.0)
         session.prediction_ready = all(state.class_counts)
         session.index = call.index
+        session.run_id = call.run_id
         session.broad_features = broad.tolist()
         event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"atgm/{DETECTOR}/{MODEL_VERSION}/{agent}/{call.event_id}"))
         return {
@@ -191,10 +194,30 @@ class ClassifierService:
             },
         }
     def _save(self, agent: str, session_id: str, session: Session, scores: list[dict] | None = None) -> None:
+        output = list(scores or ())
         updated = None
         if session.ended and session.label is not None and not session.trained and session.broad_features is not None:
             if session.prediction_ready:
                 session.error = int(session.prediction != session.label)
+                event_id = str(uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(
+                    ["atgm", "classifier.error", DETECTOR, MODEL_VERSION, agent, session_id]
+                )))
+                output.append({
+                    "schema_version": "1.0",
+                    "event_id": event_id,
+                    "event_type": "classifier.error",
+                    "occurred_at": datetime.now(UTC).isoformat(),
+                    "run_id": session.run_id,
+                    "session_id": session_id,
+                    "sequence": None,
+                    "request_id": None,
+                    "data": {
+                        "agent_id": agent,
+                        "detector": DETECTOR,
+                        "model_version": MODEL_VERSION,
+                        "error": session.error,
+                    },
+                })
             updated = self.model.learn(self.models[agent], np.array(session.broad_features), session.label)
             session.broad_features = None
             session.trained = True
@@ -205,7 +228,7 @@ class ClassifierService:
                 self.db.execute("INSERT OR REPLACE INTO models VALUES (?, ?, ?)", (agent, MODEL_VERSION, state))
             self.db.execute("INSERT OR REPLACE INTO sessions VALUES (?, ?, ?)",
                             (agent, session_id, json.dumps(asdict(session))))
-            for score in scores or ():
+            for score in output:
                 self.db.execute("INSERT INTO score_outbox VALUES (?, ?)", (score["event_id"], json.dumps(score)))
         if updated is not None:
             self.models[agent] = updated

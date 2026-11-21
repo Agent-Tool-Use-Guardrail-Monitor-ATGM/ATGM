@@ -5,7 +5,13 @@ import logging
 import os
 from pathlib import Path
 
-from online_bls.service import LABEL_TOPIC, SCORE_TOPIC, TOOL_TOPICS, ClassifierService
+from online_bls.service import (
+    ERROR_TOPIC,
+    LABEL_TOPIC,
+    SCORE_TOPIC,
+    TOOL_TOPICS,
+    ClassifierService,
+)
 
 log = logging.getLogger(__name__)
 
@@ -18,7 +24,7 @@ def publish_pending(service: ClassifierService, producer) -> None:
                 errors.append(error)
 
         producer.produce(
-            SCORE_TOPIC,
+            ERROR_TOPIC if event["event_type"] == "classifier.error" else SCORE_TOPIC,
             key=event["data"]["agent_id"],
             value=json.dumps(event).encode(),
             on_delivery=on_delivery,
