@@ -1,4 +1,4 @@
-from b3_markov.domain.sessions import SessionBuffer, build_sessions
+from b3_markov.domain.sessions import build_sessions
 from helpers import FULL, SHORT, events
 
 
@@ -25,18 +25,6 @@ def test_zero_call_session_is_kept():
     assert sessions[0].tools == []
 
 
-def test_buffer_returns_session_on_end_only():
-    buf, out = SessionBuffer(), []
-    for e in events("a", FULL):
-        out.append(buf.add(e))
-    assert out[:-1] == [None] * (len(out) - 1) and out[-1].tools == FULL and buf.open_sessions == 0
-
-
-def test_buffer_skips_session_whose_start_was_missed():
-    buf = SessionBuffer()
-    assert all(buf.add(e) is None for e in events("a", SHORT)[1:])
-
-
 def test_build_sessions_keeps_arguments_and_timestamps():
     ev = events("a", SHORT)
     ev[1]["occurred_at"] = "2026-11-19T07:20:12+00:00"
@@ -46,10 +34,10 @@ def test_build_sessions_keeps_arguments_and_timestamps():
     assert s.calls[1].args == {}
 
 
-def test_buffer_finished_session_carries_arguments():
-    buf, last = SessionBuffer(), None
+def test_failed_call_is_a_call_but_requested_is_not():
     ev = events("a", SHORT)
-    ev[1]["data"]["arguments"] = {"name": "Tom"}
-    for e in ev:
-        last = buf.add(e) or last
-    assert last.call_objects[0].args == {"name": "Tom"}
+    ev[2]["event_type"] = "tool_call.failed"
+    ev.insert(1, {"event_id": "req", "event_type": "tool_call.requested", "session_id": "a",
+                  "data": {"agent_id": "B", "tool_name": "find_contact", "session_call_index": 1}})
+    (s,), _ = build_sessions(ev)
+    assert s.tools == SHORT

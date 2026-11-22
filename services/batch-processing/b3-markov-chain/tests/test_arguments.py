@@ -91,7 +91,7 @@ def test_detector_table_roundtrip_and_v01_compatibility():
     table = to_table(det, TRAIN, {}, label_filter="x", seed=0)
     again = from_table(table)
     session = call_session(normal_calls(to="x@mailcollector.example"))
-    assert again.score(1, session) == det.score(1, session) and table["spec_version"] == "0.2"
+    assert again.score(1, session) == det.score(1, session) and table["spec_version"] == "0.3"
     seq_only = from_table(to_table(fit_detector(TRAIN, [1], Params()), TRAIN, {}, label_filter="x", seed=0))
     assert seq_only.arguments is None and "arguments" not in to_table(fit_detector(TRAIN, [1], Params()), TRAIN, {}, label_filter="x", seed=0)
     assert seq_only.score(1, session)["score"] == seq_only.score(1, session)["mean_nll"]
@@ -109,3 +109,17 @@ def test_mock_argument_names_and_whitespace_do_not_count_as_changed():
 def test_scan_without_any_text_is_unchecked_not_changed():
     f = flags([call("tone_checker", draft=TEXT), call("sensitive_content_scan")])
     assert f[1]["text_vs_checked"] == "unchecked"
+
+
+def test_per_call_featurizer_folded_equals_whole_session_flags():
+    from b3_markov.domain.arguments import ArgContext
+    fz = Featurizer.fit(TRAIN, PARAMS)
+    calls = normal_calls(body=TEXT + " changed")
+    out, ctx = [], None
+    for c in calls:
+        f, ctx = fz.flags_for_call(c, ctx)
+        out.append(f)
+    assert out == fz.flags(calls) and isinstance(ctx, ArgContext) and ctx.checked == TEXT
+    # the stream can start a call from a stored context
+    f, _ = fz.flags_for_call(calls[5], ArgContext(tone_draft=TEXT, checked=TEXT))
+    assert f["body_vs_checked"] == "changed"

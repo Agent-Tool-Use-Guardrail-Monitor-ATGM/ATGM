@@ -1,7 +1,7 @@
 import math
 
 from b3_markov.domain.scoring import Params
-from b3_markov.domain.training import (average_precision, cv_scores, fit, from_table, kfold, percentile,
+from b3_markov.domain.training import (average_precision, cv_scores, fit, fit_detector, from_table, kfold, percentile,
                                        profile, roc_auc, to_table)
 from helpers import FULL, SHORT, sess
 
@@ -94,3 +94,63 @@ def test_profile_flags_sequences_seen_in_normal():
     adv = [sess(FULL, "a", "adversarial", "unsafe_args"), sess(["save_draft"], "b", "adversarial", "skipped_check")]
     p = profile(EXAMPLE, adv)
     assert p["adversarial_exact_sequence_in_normal"]["total"] == 1
+
+
+# ---------------------------------------------------------------- v0.3 / v0.4
+
+def _normals(n=30):
+    variants = [FULL, SHORT, FULL[:3] + ["get_free_slots"] + FULL[3:]]
+    return [sess(variants[i % 3], f"n{i}") for i in range(n)]
+
+
+def test_call_threshold_is_the_100_minus_p_percentile_of_heldout_min_log_p():
+    from b3_markov.domain.training import cv_results, evaluate_config
+    normal = _normals()
+    kw = dict(folds=5, seed=1, pct=95, bootstrap=0)
+    r = evaluate_config(normal, [sess(["save_draft", "save_draft"], "a", "adversarial", "x")], 1, Params(), **kw)
+    held_m = [x["min_log_p"] for x in cv_results(normal, 1, Params(), 5, 1)]
+    assert math.isclose(r["call_level"]["call_threshold"], percentile(held_m, 5))
+    assert r["call_level"]["heldout_min_log_p"] == held_m and r["call_level"]["statistic"] == "min_log_p_per_session"
+
+
+def test_adversarial_sessions_never_change_the_call_threshold_or_the_session_threshold():
+    from b3_markov.domain.training import evaluate_config
+    normal = _normals()
+    kw = dict(folds=5, seed=1, pct=99, bootstrap=0)
+    a = evaluate_config(normal, [], 1, Params(), **kw)
+    b = evaluate_config(normal, [sess(["x", "y", "z"], "a", "adversarial", "t")] * 5, 1, Params(), **kw)
+    assert a["call_level"]["call_threshold"] == b["call_level"]["call_threshold"] and a["threshold"] == b["threshold"]
+
+
+def test_call_level_metrics_per_attack_type_and_first_index():
+    from b3_markov.domain.training import evaluate_config
+    odd = sess(["find_contact", "save_draft", "save_draft"], "a", "adversarial", "flood")
+    r = evaluate_config(_normals(), [odd], 1, Params("floor"), folds=5, seed=1, pct=95, bootstrap=0)
+    t = r["call_level"]["recall_by_attack_type"]["flood"]
+    assert t["call_detected"] == 1 and t["call_recall"] == 1.0 and t["first_index"]["indices"] == [2]
+    fa = r["call_level"]["false_alarm"]
+    assert 0 <= fa["call"] <= fa["union"] <= 1 and fa["union"] >= fa["session"]
+
+
+def test_fold_models_never_count_a_session_from_their_own_fold():
+    from b3_markov.domain.training import fold_models
+    normal = [sess(FULL, f"s{i}") if i != 7 else sess(["rare_tool"], "s7") for i in range(20)]
+    folds = fold_models(normal, [1], Params(), 10, 0)
+    assert len(folds) == 10
+    for held_out, train, det in folds:
+        held_ids = {normal[i].session_id for i in held_out}
+        assert not held_ids & {s.session_id for s in train} and len(train) == 20 - len(held_out)
+        assert ("rare_tool" in det.chain.vocabulary) == ("s7" not in held_ids)
+
+
+def test_tune_alpha_uses_normal_data_only_and_returns_a_grid_value():
+    from b3_markov.domain.training import ALPHA_GRID, tune_alpha
+    best, table = tune_alpha(_normals(), 1, Params(), 5, 0)
+    assert best in ALPHA_GRID and set(table) == set(ALPHA_GRID) and table[best] == min(table.values())
+
+
+def test_table_records_agent_and_vocabulary_source():
+    model = fit_detector(EXAMPLE, [1], Params(), vocabulary=["find_contact", "save_draft"])
+    table = to_table(model, EXAMPLE, {}, label_filter="x", seed=0, agent="A", vocabulary_declared=True)
+    assert table["training"]["agent"] == "A" and table["training"]["vocabulary_source"] == "declared"
+    assert table["vocabulary"] == ["find_contact", "save_draft"]

@@ -1,9 +1,8 @@
-"""Sessions: building them from raw events (training) and collecting them from the stream (scorer).
+"""Sessions: building them from raw batch events (training). Live buffering lives in the stream pipeline (spec Sec. 14).
 
 A Session holds only what the Markov chain needs: the ordered tool names. Category / label are kept
 for selecting the normal sessions and for evaluation.
 """
-from collections import OrderedDict
 from dataclasses import dataclass, field
 
 
@@ -48,6 +47,9 @@ class FinishedSession:
         return [to_call(call) for call in self.calls]
 
 
+CALL_EVENTS = ("tool_call.completed", "tool_call.failed")     # a failed call is a call too (spec Sec. 15.2)
+
+
 def build_sessions(events: list[dict]) -> tuple[list[Session], dict]:
     """Groups raw events into complete sessions.
 
@@ -71,7 +73,7 @@ def build_sessions(events: list[dict]) -> tuple[list[Session], dict]:
             continue
         if kind == "session.started":
             started[session] = event.get("data") or {}
-        elif kind.startswith("tool_call."):
+        elif kind in CALL_EVENTS:
             calls.setdefault(session, []).append({**event["data"], "occurred_at": event.get("occurred_at")})
         elif kind == "session.ended":
             ended[session] = (event.get("data") or {}).get("call_count")
@@ -86,33 +88,3 @@ def build_sessions(events: list[dict]) -> tuple[list[Session], dict]:
                                 info.get("category", "normal"), info.get("attack_type"),
                                 calls=[to_call(call) for call in ordered]))
     return sessions, {"duplicate_events": duplicates, "incomplete_sessions": incomplete}
-
-
-class SessionBuffer:
-    """Collects each session's tool calls from the stream until the session ends (as in B1)."""
-
-    def __init__(self, max_open: int = 10_000):
-        self._open: OrderedDict[str, list[dict]] = OrderedDict()
-        self._max_open = max_open
-
-    def add(self, event: dict) -> FinishedSession | None:
-        """Returns the finished session on session.ended, otherwise None."""
-        session = event.get("session_id")
-        event_type = event.get("event_type", "")
-        if not session:
-            return None
-        if event_type == "session.started":
-            self._open[session] = []
-            if len(self._open) > self._max_open:
-                self._open.popitem(last=False)
-        elif event_type.startswith("tool_call.") and session in self._open:
-            self._open[session].append({**event["data"], "occurred_at": event.get("occurred_at")})
-        elif event_type == "session.ended" and session in self._open:
-            calls = sorted(self._open.pop(session), key=lambda call: call["session_call_index"])
-            agent = (event.get("data") or {}).get("agent_id") or (calls[0]["agent_id"] if calls else "")
-            return FinishedSession(session, agent, calls, event["event_id"])
-        return None
-
-    @property
-    def open_sessions(self) -> int:
-        return len(self._open)

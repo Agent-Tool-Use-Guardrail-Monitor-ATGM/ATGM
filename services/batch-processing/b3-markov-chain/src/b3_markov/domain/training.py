@@ -11,30 +11,35 @@ from b3_markov.domain.scoring import Detector, MarkovModel, Params
 from b3_markov.domain.sequences import DELIM, END, START, UNK, context_key, transitions
 from b3_markov.domain.sessions import Session
 
-SPEC_VERSION = "0.2"
+SPEC_VERSION = "0.3"
 
 
 # ---------------------------------------------------------------- training
 
-def fit(sessions: list[Session], orders: list[int], params: Params) -> MarkovModel:
-    """Maximum-likelihood counts per order. Backoff needs every lower order too."""
+def fit(sessions: list[Session], orders: list[int], params: Params, vocabulary: list[str] | None = None) -> MarkovModel:
+    """Maximum-likelihood counts per order. Backoff needs every lower order too.
+
+    `vocabulary` fixes V to a declared tool list (spec Sec. 15.5); tools outside it are counted as <UNK>.
+    Without it V is the set of tools seen in training.
+    """
     if params.smoothing == "backoff":
         orders = list(range(0, max(orders) + 1))
-    vocabulary = sorted({tool for s in sessions for tool in s.tools})
+    declared = set(vocabulary) if vocabulary else None
+    vocabulary = sorted(declared) if declared else sorted({tool for s in sessions for tool in s.tools} - {UNK})
     counts: dict[int, dict[str, dict[str, int]]] = {}
     for order in orders:
         rows: dict[str, Counter] = defaultdict(Counter)
         for s in sessions:
-            for ctx, nxt in transitions(s.tools, order):
+            for ctx, nxt in transitions(s.tools, order, declared):
                 rows[context_key(ctx)][nxt] += 1
         counts[order] = {key: dict(sorted(row.items())) for key, row in sorted(rows.items())}
     return MarkovModel(vocabulary, counts, params)
 
 
 def fit_detector(sessions: list[Session], orders: list[int], params: Params, arg_params: ArgParams | None = None,
-                 mode: str = "joint") -> Detector:
+                 mode: str = "joint", vocabulary: list[str] | None = None) -> Detector:
     """Chain over tool names, plus the argument emission model unless arg_params is None."""
-    chain = fit(sessions, orders, params)
+    chain = fit(sessions, orders, params, vocabulary)
     return Detector(chain, ArgumentModel.fit(sessions, arg_params) if arg_params else None, mode)
 
 
@@ -44,7 +49,8 @@ def input_sha256(sessions: list[Session]) -> str:
 
 
 def to_table(detector: Detector, sessions: list[Session], calibration: dict, *, label_filter: str,
-             seed: int, trained_at: str | None = None) -> dict:
+             seed: int, trained_at: str | None = None, agent: str | None = None,
+             vocabulary_declared: bool = False) -> dict:
     """The transition table of the spec (Sec. 5 + 13.6), JSON-serialisable."""
     model = detector.chain if isinstance(detector, Detector) else detector
     arguments = detector.arguments if isinstance(detector, Detector) else None
@@ -69,7 +75,8 @@ def to_table(detector: Detector, sessions: list[Session], calibration: dict, *, 
                      "n_calls": sum(len(s.tools) for s in sessions),
                      "input_sha256": input_sha256(sessions),
                      "trained_at": trained_at or datetime.now(timezone.utc).isoformat(),
-                     "random_seed": seed},
+                     "random_seed": seed, "agent": agent,
+                     "vocabulary_source": "declared" if vocabulary_declared else "learned"},
         "vocabulary": model.vocabulary,
         "orders": orders,
         "calibration": calibration,
@@ -108,16 +115,51 @@ def kfold(n: int, folds: int, seed: int) -> list[list[int]]:
     return [index[i::folds] for i in range(folds)]
 
 
-def cv_scores(normal: list[Session], order: int, params: Params, folds: int, seed: int,
-              key: str = "score", arg_params: ArgParams | None = None, mode: str = "joint") -> list[float]:
-    """Held-out score of every normal session (model trained on the other folds)."""
-    scores = [0.0] * len(normal)
+def cv_results(normal: list[Session], order: int, params: Params, folds: int, seed: int,
+               arg_params: ArgParams | None = None, mode: str = "joint",
+               vocabulary: list[str] | None = None) -> list[dict]:
+    """Full score dict of every normal session, from the model trained on the other folds."""
+    results: list[dict] = [{}] * len(normal)
     for held_out in kfold(len(normal), folds, seed):
         held = set(held_out)
-        model = fit_detector([s for i, s in enumerate(normal) if i not in held], [order], params, arg_params, mode)
+        model = fit_detector([s for i, s in enumerate(normal) if i not in held], [order], params, arg_params,
+                             mode, vocabulary)
         for i in held_out:
-            scores[i] = model.score(order, normal[i])[key]
-    return scores
+            results[i] = model.score(order, normal[i])
+    return results
+
+
+def cv_scores(normal: list[Session], order: int, params: Params, folds: int, seed: int,
+              key: str = "score", arg_params: ArgParams | None = None, mode: str = "joint",
+              vocabulary: list[str] | None = None) -> list[float]:
+    """Held-out score of every normal session (model trained on the other folds)."""
+    return [r[key] for r in cv_results(normal, order, params, folds, seed, arg_params, mode, vocabulary)]
+
+
+def fold_models(normal: list[Session], orders: list[int], params: Params, folds: int, seed: int,
+                arg_params: ArgParams | None = None, mode: str = "joint",
+                vocabulary: list[str] | None = None) -> list[tuple[list[int], list[Session], Detector]]:
+    """The CV fold models: (held-out indices, training sessions, detector). Same folds as cv_results."""
+    out = []
+    for held_out in kfold(len(normal), folds, seed):
+        held = set(held_out)
+        train = [s for i, s in enumerate(normal) if i not in held]
+        out.append((held_out, train, fit_detector(train, orders, params, arg_params, mode, vocabulary)))
+    return out
+
+
+ALPHA_GRID = (0.01, 0.03, 0.1, 0.3, 1.0)
+
+
+def tune_alpha(normal: list[Session], order: int, params: Params, folds: int, seed: int,
+               vocabulary: list[str] | None = None, grid=ALPHA_GRID) -> tuple[float, dict]:
+    """Additive alpha with the lowest held-out mean NLL per transition on normal sessions (no attack data)."""
+    table = {}
+    for alpha in grid:
+        trial = Params(params.smoothing, alpha, params.epsilon, params.backoff_weight)
+        results = cv_results(normal, order, trial, folds, seed, None, "seq", vocabulary)
+        table[alpha] = sum(r["total_nll"] for r in results) / sum(r["n_transitions"] for r in results)
+    return min(table, key=table.get), table
 
 
 # ---------------------------------------------------------------- metrics
@@ -178,18 +220,55 @@ def bootstrap_auc_ci(negatives: list[float], positives: list[float], reps: int, 
     return [percentile(aucs, 2.5), percentile(aucs, 97.5)]
 
 
+def rate_ci(values: list[float], threshold: float, reps: int, seed: int, below: bool = False) -> list[float] | None:
+    """Bootstrap interval of the share of values above (or, below=True, under) a fixed threshold."""
+    if reps <= 0 or not values:
+        return None
+    rng = random.Random(seed)
+    hit = (lambda v: v < threshold) if below else (lambda v: v > threshold)
+    rates = sorted(sum(hit(v) for v in rng.choices(values, k=len(values))) / len(values) for _ in range(reps))
+    return [percentile(rates, 2.5), percentile(rates, 97.5)]
+
+
+SENSITIVITY_PERCENTILES = (90, 95, 99, 99.5)
+
+
 def evaluate_config(normal: list[Session], adversarial: list[Session], order: int, params: Params, *,
                     folds: int, seed: int, pct: float, bootstrap: int, score_key: str = "score",
-                    arg_params: ArgParams | None = None, mode: str = "joint") -> dict:
-    """Calibrates on held-out normal scores, scores adversarial sessions with the model trained on all normal."""
-    held_out = cv_scores(normal, order, params, folds, seed, score_key, arg_params, mode)
-    model = fit_detector(normal, [order], params, arg_params, mode)
-    adv_scores = [model.score(order, s)[score_key] for s in adversarial]
-    threshold = percentile(held_out, pct)
+                    arg_params: ArgParams | None = None, mode: str = "joint",
+                    vocabulary: list[str] | None = None) -> dict:
+    """Calibrates on held-out normal scores, scores adversarial sessions with the model trained on all normal.
 
-    by_type: dict[str, list[float]] = defaultdict(list)
-    for s, v in zip(adversarial, adv_scores):
-        by_type[s.attack_type or "unknown"].append(v)
+    Besides the session threshold (Sec. 7.1) it calibrates the call-level threshold of Sec. 14.3:
+    m(s) = min over transitions of ln p, call_threshold = the (100 - pct)-th percentile of the held-out m(s).
+    """
+    cv = cv_results(normal, order, params, folds, seed, arg_params, mode, vocabulary)
+    held_out = [r[score_key] for r in cv]
+    held_m = [r["min_log_p"] for r in cv]
+    model = fit_detector(normal, [order], params, arg_params, mode, vocabulary)
+    adv = [model.score(order, s) for s in adversarial]
+    adv_scores = [r[score_key] for r in adv]
+    threshold = percentile(held_out, pct)
+    call_threshold = percentile(held_m, 100 - pct)
+
+    by_type: dict[str, list[tuple[float, dict]]] = defaultdict(list)
+    for s, v, r in zip(adversarial, adv_scores, adv):
+        by_type[s.attack_type or "unknown"].append((v, r))
+
+    def first_below(r: dict) -> int | None:
+        """1-based index of the first transition below the call threshold (T + 1 is the <END> step)."""
+        return next((i for i, lp in enumerate(r["log_probs"], 1) if lp < call_threshold), None)
+
+    call_by_type = {}
+    for t, items in sorted(by_type.items()):
+        firsts = [f for _, r in items if (f := first_below(r)) is not None]
+        call_by_type[t] = {
+            "n": len(items), "call_detected": len(firsts), "call_recall": len(firsts) / len(items),
+            "union_detected": sum(1 for v, r in items if v > threshold or first_below(r) is not None),
+            "first_index": {"indices": sorted(firsts), "median": percentile(firsts, 50) if firsts else None}}
+    session_fa = sum(v > threshold for v in held_out) / len(held_out)
+    call_fa = sum(m < call_threshold for m in held_m) / len(held_m)
+    union_fa = sum(v > threshold or m < call_threshold for v, m in zip(held_out, held_m)) / len(held_out)
     return {
         "order": order, "smoothing": params.smoothing, "score": mode if score_key == "score" else score_key,
         "arguments": arg_params is not None,
@@ -200,11 +279,22 @@ def evaluate_config(normal: list[Session], adversarial: list[Session], order: in
         "roc_auc_ci95": bootstrap_auc_ci(held_out, adv_scores, bootstrap, seed),
         "pr_auc": average_precision(held_out, adv_scores),
         "at_threshold": at_threshold(held_out, adv_scores, threshold),
-        "recall_by_attack_type": {t: {"n": len(v), "detected": sum(x > threshold for x in v),
-                                      "recall": sum(x > threshold for x in v) / len(v)}
+        "false_alarm_rate_ci95": rate_ci(held_out, threshold, bootstrap, seed),
+        "recall_by_attack_type": {t: {"n": len(v), "detected": sum(x > threshold for x, _ in v),
+                                      "recall": sum(x > threshold for x, _ in v) / len(v)}
                                   for t, v in sorted(by_type.items())},
         "sensitivity": {str(q): at_threshold(held_out, adv_scores, percentile(held_out, q))
-                        for q in (95, 99, 99.5)},
+                        for q in SENSITIVITY_PERCENTILES},
+        # call-level check (spec Sec. 14.3): an offline preview of the stream pipeline's out_of_order alerts
+        "call_level": {
+            "call_threshold": call_threshold, "statistic": "min_log_p_per_session",
+            "heldout_min_log_p": held_m,
+            "false_alarm": {"session": session_fa, "call": call_fa, "union": union_fa,
+                            "call_ci95": rate_ci(held_m, call_threshold, bootstrap, seed, below=True)},
+            "recall_by_attack_type": call_by_type,
+            "union_recall": (sum(c["union_detected"] for c in call_by_type.values()) / len(adversarial)
+                             if adversarial else None),
+        },
     }
 
 
@@ -231,6 +321,9 @@ def profile(normal: list[Session], adversarial: list[Session]) -> dict:
         "adversarial_exact_sequence_in_normal": {
             "total": sum(tuple(s.tools) in normal_sequences for s in adversarial),
             "by_type": {t: sum(tuple(s.tools) in normal_sequences for s in v) for t, v in sorted(by_type.items())}},
+        "max_session_recall_sequence_only": (
+            (len(adversarial) - sum(tuple(s.tools) in normal_sequences for s in adversarial)) / len(adversarial)
+            if adversarial else None),
         "adversarial_all_bigrams_seen_in_normal": sum(
             all(pair in bigrams for pair in transitions(s.tools, 1)) for s in adversarial),
     }
@@ -238,9 +331,9 @@ def profile(normal: list[Session], adversarial: list[Session]) -> dict:
 
 def run_experiment(normal: list[Session], adversarial: list[Session], orders: list[int], params: Params, *,
                    folds: int, seed: int, pct: float, bootstrap: int, arg_params: ArgParams | None = None,
-                   mode: str = "joint") -> dict:
+                   mode: str = "joint", vocabulary: list[str] | None = None) -> dict:
     """All metrics: the chosen configuration per order, ablations, the other smoothings, and the baselines."""
-    common = dict(folds=folds, seed=seed, pct=pct)
+    common = dict(folds=folds, seed=seed, pct=pct, vocabulary=vocabulary)
     results = {f"order{o}": evaluate_config(normal, adversarial, o, params, bootstrap=bootstrap,
                                             arg_params=arg_params, mode=mode, **common) for o in orders}
     short = lambda r: {k: r[k] for k in ("roc_auc", "pr_auc", "at_threshold")}      # noqa: E731
