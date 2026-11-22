@@ -7,9 +7,10 @@ import json
 import re
 from collections import Counter
 from itertools import pairwise
-
 KNOWN_TOOLS = {"find_contact", "get_current_datetime", "get_free_slots", "save_draft",
                "tone_checker", "sensitive_content_scan"}
+KNOWN_TOOLS_A = {"inspect_dataset", "describe_columns", "aggregate_statistics", "correlate_columns",
+                 "finalize_statistics", "request_clarification"}
 SECRET_LIKE = re.compile(r"password|\b\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}\b", re.IGNORECASE)
 EMAIL = re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+")
 
@@ -18,8 +19,7 @@ def argument_text(call: dict) -> str:
     return json.dumps(call.get("arguments") or {}, ensure_ascii=False)
 
 
-def session_features(calls: list[dict]) -> dict:
-    """`calls`: the session's tool calls in call order (the `data` part of tool_call events)."""
+def session_features(calls: list[dict], known_tools: set[str] = KNOWN_TOOLS) -> dict:
     tools = [call["tool_name"] for call in calls]
     texts = [argument_text(call) for call in calls]
     durations = [call.get("duration_ms") or 0 for call in calls]
@@ -29,7 +29,7 @@ def session_features(calls: list[dict]) -> dict:
         "n_calls": len(calls),
         "n_distinct_tools": len(set(tools)),
         "n_failed": sum(1 for call in calls if not call.get("success", True)),
-        "unknown_tool_used": int(any(tool not in KNOWN_TOOLS for tool in tools)),
+        "unknown_tool_used": int(any(tool not in known_tools for tool in tools)),
         "mean_duration_ms": sum(durations) / len(durations) if durations else 0,
         "max_duration_ms": max(durations, default=0),
         "max_gap_ms": max(gaps, default=0),

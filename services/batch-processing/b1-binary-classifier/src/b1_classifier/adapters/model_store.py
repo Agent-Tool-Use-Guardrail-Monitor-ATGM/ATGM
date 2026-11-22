@@ -8,10 +8,10 @@ import joblib
 MODEL_NAME = "b1-binary"
 
 
-def save(model, metrics: dict, models_dir: Path) -> Path:
-    """models/b1-binary/<version>/{model.joblib, metrics.json}; returns the folder."""
+def save(model, metrics: dict, models_dir: Path, name: str = MODEL_NAME) -> Path:
+    """models/<name>/<version>/{model.joblib, metrics.json}; returns the folder."""
     version = f"{datetime.now(timezone.utc):%Y-%m-%dT%H-%M-%S}_{metrics['model']}"
-    folder = models_dir / MODEL_NAME / version
+    folder = models_dir / name / version
     folder.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, folder / "model.joblib")
     (folder / "metrics.json").write_text(json.dumps({"version": version, **metrics}, indent=2))
