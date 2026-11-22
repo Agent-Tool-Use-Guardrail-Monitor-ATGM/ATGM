@@ -49,6 +49,28 @@ Output: `models/b1-binary/<time>_<model>/model.joblib` and `metrics.json` (preci
 confusion matrix). With `--announce` a `model.trained` event goes to `model-updates` (key `b1-binary`);
 the exact message and the registry belong to B4.
 
-## Next
+## Agent A (experiment)
 
-- Agent A: needs a loader for the `datalens-collector` format and its own tool list (one model per agent)
+Agent A (DataLens) has 130 sessions in the datalens-collector export (copied to
+`dataset/agent_a/all-events.jsonl`). Only 2 of them broke a rule (1 `policy_blocked`,
+1 `answer_violation`), too few to train or cross-validate a classifier. So this experiment uses
+the **planned** category as label: 57 `prompt_injected` vs. 73 `normal`. The question is whether
+an injection attempt is visible in the tool calls, not whether a rule was broken.
+
+`from_collector` pairs each `tool_call.requested` with its `completed` / `failed` event.
+Arguments are only hashed in the export, so the tool's non-secret `features` stand in for them.
+
+```bash
+PYTHONPATH=src uv run python -m b1_classifier.main --agent A
+PYTHONPATH=src uv run python -m b1_classifier.main --agent A --model logistic_regression
+```
+
+| Model | Accuracy | Macro F1 | CV5 macro F1 |
+|---|---|---|---|
+| Random forest | 0.364 | 0.354 | 0.497 |
+| Logistic regression | 0.515 | 0.476 | 0.600 |
+
+Agent A mostly resisted the injections (2 violations out of 57 attempts), so its tool calls look almost the same in both groups. Agent B, where violations
+are common, reaches macro F1 0.92. The Agent A model is saved as `b1-binary-a` and not used on the
+stream. The collector notes that paired scenarios should stay together when splitting; the random
+split here may separate them, which at chance level does not inflate the results.
