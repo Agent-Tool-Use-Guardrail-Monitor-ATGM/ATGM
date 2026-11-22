@@ -1,4 +1,4 @@
-"""Loads sessions: from the dataset files (B1 layout or one raw events file) or from analytics_db.
+"""Loads sessions: from the dataset files (B1 layout, one raw events file, Agent A's wrapped file) or from analytics_db.
 
 All loaders return a list of Session (domain.sessions). `label` is "compliant" / "violating" like in B1.
 """
@@ -7,7 +7,8 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
-from b3_markov.domain.sessions import Session, build_sessions, to_call
+from b3_markov.domain.sequences import UNK
+from b3_markov.domain.sessions import Call, Session, build_sessions, to_call
 
 log = logging.getLogger("b3-dataset")
 
@@ -38,6 +39,51 @@ def from_events_file(path: Path) -> list[Session]:
     return sessions
 
 
+def from_agent_a_file(path: Path) -> list[Session]:
+    """Agent A's recorded dataset: JSONL of wrapped records (spec Sec. 15.3).
+
+    Each line has category / attack_type / label next to the event under `event` (payload agent-run-events-v2).
+    The tool name sits in tool_call.requested (data.name); tool_call.completed / tool_call.failed carry the result.
+    Request and result are joined by data.tool_call_id and the call is counted once, at its result, with the name
+    from whichever of the two has it (no name -> <UNK>, e.g. a request for a tool that does not exist). Failed
+    calls count. Calls are ordered by data.session_call_index, else by the envelope sequence. model_call.* is ignored.
+    Arguments are only hashed in this data, so calls carry none.
+    """
+    seen: set = set()
+    meta: dict[str, dict] = {}
+    requested: dict[tuple, dict] = {}
+    results: dict[str, list[dict]] = {}
+    for record in read_jsonl(path):
+        event = record.get("event") or {}
+        if event.get("event_id") in seen:
+            continue
+        seen.add(event.get("event_id"))
+        session = event.get("session_id") or record.get("case_id")
+        if not session:
+            continue
+        meta.setdefault(session, {"category": record.get("category"), "attack_type": record.get("attack_type"),
+                                  "label": record.get("label")})
+        kind, data = event.get("event_type", ""), event.get("data") or {}
+        if kind == "tool_call.requested":
+            requested[(session, data.get("tool_call_id"))] = data
+        elif kind in ("tool_call.completed", "tool_call.failed"):
+            results.setdefault(session, []).append(event)
+
+    sessions = []
+    for session, info in meta.items():
+        calls = []
+        for event in results.get(session, []):
+            data = event.get("data") or {}
+            request = requested.get((session, data.get("tool_call_id")), {})
+            name = request.get("name") or data.get("name") or data.get("tool_name") or UNK
+            index = data.get("session_call_index", request.get("session_call_index", event.get("sequence", 0)))
+            calls.append((index, event.get("sequence", 0), Call(name, {}, event.get("occurred_at"))))
+        ordered = [c for _, _, c in sorted(calls, key=lambda item: item[:2])]
+        sessions.append(Session(session, [c.tool for c in ordered], info["category"] or "normal",
+                                info["attack_type"], info["label"], calls=ordered))
+    return sessions
+
+
 def from_dataset(dataset_dir: Path, scenario_file: str) -> list[Session]:
     """dataset/agent_b/events/events_for_<file> + dataset/agent_b/labels/labels_for_<file>
     (labels by actual behaviour, see services/agent-b/src/agent_b/label_events.py)."""
@@ -54,7 +100,7 @@ def from_dataset(dataset_dir: Path, scenario_file: str) -> list[Session]:
 
 SESSION_CALLS_SQL = """
 SELECT session_id, data, occurred_at FROM agent_events
-WHERE event_type LIKE 'tool_call.%%' AND agent_id = %s
+WHERE event_type IN ('tool_call.completed', 'tool_call.failed') AND agent_id = %s
 ORDER BY session_id, session_call_index"""
 
 # the newest reviewer verdict per session (attack / false_alarm)

@@ -95,6 +95,13 @@ def date_delta(call: Call) -> int | str:
     return (requested - today).days
 
 
+@dataclass(frozen=True)
+class ArgContext:
+    """What earlier calls of the session contribute to the flags of the next one."""
+    tone_draft: str | None = None
+    checked: str | None = None
+
+
 class Featurizer:
     def __init__(self, params: ArgParams, known_domains: dict[str, int] | None = None,
                  date_window: tuple[int, int] | None = None):
@@ -114,47 +121,57 @@ class Featurizer:
                     deltas.append(delta)
         return cls(params, dict(sorted(domains.items())), (min(deltas), max(deltas)) if deltas else None)
 
+    def flags_for_call(self, call: Call, context: "ArgContext | None" = None) -> tuple[dict[str, str], "ArgContext"]:
+        """Flags of ONE call given what came before (last tone draft, last checked text); returns the new context.
+
+        The stream pipeline calls this once per call; flags() below is the fold over a whole session.
+        """
+        context = context or ArgContext()
+        tone_draft, checked = context.tone_draft, context.checked
+        a, f = call.args, {}
+        if call.tool == "find_contact":
+            f["name_kind"] = name_kind(a.get("name"))
+        elif call.tool == "get_free_slots":
+            delta = date_delta(call)
+            if isinstance(delta, str):
+                f["date_kind"] = delta
+            else:
+                lo, hi = self.date_window or (delta, delta)
+                slack = self.params.date_slack_days
+                f["date_kind"] = "ok" if lo - slack <= delta <= hi + slack else "out_of_window"
+        elif call.tool == "tone_checker":
+            draft = text_arg(a, "draft", "text", "body")
+            f["content"] = content_kind(draft)
+            tone_draft = checked = draft
+        elif call.tool == "sensitive_content_scan":
+            terms = a.get("extra_confidential_terms")
+            kinds = [term_kind(t) for t in terms] if isinstance(terms, list) else []
+            f["terms_kind"] = next((k for k in TERM_ORDER if k in kinds), "empty")
+            text = text_arg(a, "text", "draft", "body")
+            f["content"] = content_kind(text)
+            f["text_vs_checked"] = "unchecked" if tone_draft is None or text is None else (
+                "same" if same_text(text, tone_draft) else "changed")
+            checked = text if text is not None else checked
+        elif call.tool == "save_draft":
+            to = a.get("to")
+            domain = recipient_domain(to)
+            if domain is None:
+                f["to_kind"] = "placeholder" if isinstance(to, str) and to.strip().startswith(("[", "<")) else "malformed"
+            else:
+                seen = self.known_domains.get(domain, 0)
+                f["to_kind"] = ("known" if seen >= self.params.min_domain_count
+                                else "rare_domain" if seen else "unseen_domain")
+            body = text_arg(a, "body", "text", "draft")
+            f["content"] = content_kind(a.get("subject"), body)
+            f["body_vs_checked"] = "unchecked" if checked is None or body is None else (
+                "same" if same_text(body, checked) else "changed")
+        return f, ArgContext(tone_draft, checked)
+
     def flags(self, calls: list[Call]) -> list[dict[str, str]]:
         """One {flag: value} per call; consistency flags look at the earlier calls of the session."""
-        out, tone_draft, checked = [], None, None
+        out, context = [], ArgContext()
         for call in calls:
-            a, f = call.args, {}
-            if call.tool == "find_contact":
-                f["name_kind"] = name_kind(a.get("name"))
-            elif call.tool == "get_free_slots":
-                delta = date_delta(call)
-                if isinstance(delta, str):
-                    f["date_kind"] = delta
-                else:
-                    lo, hi = self.date_window or (delta, delta)
-                    slack = self.params.date_slack_days
-                    f["date_kind"] = "ok" if lo - slack <= delta <= hi + slack else "out_of_window"
-            elif call.tool == "tone_checker":
-                draft = text_arg(a, "draft", "text", "body")
-                f["content"] = content_kind(draft)
-                tone_draft = checked = draft
-            elif call.tool == "sensitive_content_scan":
-                terms = a.get("extra_confidential_terms")
-                kinds = [term_kind(t) for t in terms] if isinstance(terms, list) else []
-                f["terms_kind"] = next((k for k in TERM_ORDER if k in kinds), "empty")
-                text = text_arg(a, "text", "draft", "body")
-                f["content"] = content_kind(text)
-                f["text_vs_checked"] = "unchecked" if tone_draft is None or text is None else (
-                    "same" if same_text(text, tone_draft) else "changed")
-                checked = text if text is not None else checked
-            elif call.tool == "save_draft":
-                domain = recipient_domain(a.get("to"))
-                to = a.get("to")
-                if domain is None:
-                    f["to_kind"] = "placeholder" if isinstance(to, str) and to.strip().startswith(("[", "<")) else "malformed"
-                else:
-                    seen = self.known_domains.get(domain, 0)
-                    f["to_kind"] = ("known" if seen >= self.params.min_domain_count
-                                    else "rare_domain" if seen else "unseen_domain")
-                body = text_arg(a, "body", "text", "draft")
-                f["content"] = content_kind(a.get("subject"), body)
-                f["body_vs_checked"] = "unchecked" if checked is None or body is None else (
-                    "same" if same_text(body, checked) else "changed")
+            f, context = self.flags_for_call(call, context)
             out.append(f)
         return out
 

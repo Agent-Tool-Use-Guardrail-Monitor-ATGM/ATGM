@@ -2,7 +2,7 @@
 import math
 from dataclasses import dataclass
 
-from b3_markov.domain.sequences import context_key, max_run_length, transitions
+from b3_markov.domain.sequences import END, START, UNK, context_key, max_run_length, transitions
 
 MAX_CALLS = 10      # spec: a session never has more than 10 tool calls
 
@@ -28,44 +28,68 @@ class MarkovModel:
                         for order, rows in counts.items()}
         self._n_next = len(self.vocabulary) + 2        # tools + END + UNK
 
-    def prob(self, order: int, context: tuple[str, ...], nxt: str) -> tuple[float, bool]:
-        """Returns (probability, seen) where seen = this exact transition occurred in training."""
+    def _p(self, order: int, context: tuple[str, ...], nxt: str) -> tuple[float, int, int]:
+        """(smoothed probability, training count of this transition, row total of the context)."""
         key = context_key(context)
         row = self.counts[order].get(key)
         count = row.get(nxt, 0) if row else 0
         total = self._totals[order].get(key, 0)
         p = self.params
         if p.smoothing == "floor":
-            return (count / total if count else p.epsilon), count > 0
+            return (count / total if count else p.epsilon), count, total
         if p.smoothing == "backoff":
             if count:
-                return count / total, True
+                return count / total, count, total
             if order == 0:
-                return p.alpha / (p.alpha * self._n_next + total), False
-            return p.backoff_weight * self.prob(order - 1, context[1:], nxt)[0], False
+                return p.alpha / (p.alpha * self._n_next + total), count, total
+            return p.backoff_weight * self._p(order - 1, context[1:], nxt)[0], count, total
         # additive: unseen context -> uniform over next symbols
         if not row:
-            return 1.0 / self._n_next, False
-        return (count + p.alpha) / (total + p.alpha * self._n_next), count > 0
+            return 1.0 / self._n_next, count, total
+        return (count + p.alpha) / (total + p.alpha * self._n_next), count, total
+
+    def known(self, token: str) -> bool:
+        return token in self._vocab_set or token in (START, END, UNK)
+
+    def prob(self, order: int, context: tuple[str, ...], nxt: str) -> tuple[float, bool]:
+        """Returns (probability, seen) where seen = this exact transition occurred in training."""
+        p, count, _ = self._p(order, context, nxt)
+        return p, count > 0
 
     def score(self, order: int, tools: list[str]) -> dict:
+        """Whole-session score as a fold of step() over the T+1 padded transitions."""
         steps = transitions(tools, order, self._vocab_set)
-        probs = [self.prob(order, ctx, nxt) for ctx, nxt in steps]
-        nlls = [-math.log(p) for p, _ in probs]
+        stepped = [step(self, order, ctx, nxt) for ctx, nxt in steps]
+        lps = [lp for lp, _, _ in stepped]
+        nlls = [-lp for lp in lps]
+        unseen = sum(1 for _, count, _ in stepped if count == 0)
         worst = max(range(len(steps)), key=lambda i: nlls[i])
         ctx, nxt = steps[worst]
         return {
             "mean_nll": sum(nlls) / len(nlls),
             "total_nll": sum(nlls),
-            "n_unseen": sum(1 for _, seen in probs if not seen),
+            "n_unseen": unseen,
             "n_transitions": len(steps),
-            "unseen_fraction": sum(1 for _, seen in probs if not seen) / len(steps),
-            "min_p": min(p for p, _ in probs),
+            "unseen_fraction": unseen / len(steps),
+            "min_log_p": min(lps),                      # m(s) of spec Sec. 14.3
+            "min_p": math.exp(min(lps)),
+            "log_probs": lps,                           # one per transition; the last one is the <END> step
             "worst_transition": f"{context_key(ctx)} -> {nxt}",
             "n_calls": len(tools),
             "exceeds_max_len": len(tools) > MAX_CALLS,
             "max_run_length": max_run_length(tools),
         }
+
+
+def step(model: MarkovModel, order: int, context: tuple[str, ...], symbol: str) -> tuple[float, int, int]:
+    """One transition: (ln p(symbol | context), training count of the transition, row total of the context).
+
+    Batch and stream both score through this function. Tokens outside the model's vocabulary count as <UNK>.
+    """
+    context = tuple(t if model.known(t) else UNK for t in context)
+    symbol = symbol if model.known(symbol) else UNK
+    p, count, total = model._p(order, context, symbol)
+    return math.log(p), count, total
 
 
 SCORE_MODES = ("joint", "joint_max", "seq", "args")
