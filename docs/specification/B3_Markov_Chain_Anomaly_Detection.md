@@ -1,6 +1,6 @@
 # Spec: Markov Chain Anomaly Detection for LLM Agent Tool-Call Sequences
 
-Data science master's course project · specification v0.2 · 21 Nov 2026 (v0.2 adds argument features, see Sec. 13)
+Data science master's course project · specification v0.4 · 22 Nov 2026 (v0.2 adds argument features, see Sec. 13; v0.3 moves live scoring to a separate stream pipeline and adds a call-level threshold, see Sec. 14; v0.4 adds a separate model for Agent A and per-agent model keys, see Sec. 15)
 
 ## 1. Purpose and scope
 
@@ -32,7 +32,7 @@ Source: Sha, Zhu, Chen, Huang, *Statistical Learning for Anomaly Detection in Cl
 
 1. *Row normalisation.* Eq. 18 and Algorithm 1 line 19 divide all counts by the total number of transitions, which gives a joint distribution, while the worked example in Sec. 4.5 (probabilities of 1) and the constraint in Eq. 15 imply a conditional (row-stochastic) matrix. We use the conditional form: P(next | current) = count(current, next) / count(current, \*).
 2. *Many short sessions instead of one long stream.* The paper trains on one stream of about 800k calls and uses an initial vector Q. Our data are many short sessions (about 4-10 calls). We pad each session with `<START>` and `<END>` tokens, so Q becomes just the row of `<START>`, and session boundaries and length are modelled explicitly.
-3. *Tiny training data.* The paper's floor constant is too crude when most transitions are unseen. We add additive (Lidstone) smoothing and optional backoff as better-motivated options (Chen and Goodman 1999; Warrender et al. 1999 compare smoothing/data models on system-call data).
+3. *Tiny training data.* The paper's floor constant is too crude when most transitions are unseen. We add additive (Lidstone) smoothing and optional backoff as better-motivated options (compare smoothing/data models on system-call data).
 4. *Scoring unit.* The paper scores sliding windows of 200 calls. We score whole sessions, with an optional window for long sessions.
 
 ## 3. Input data
@@ -126,7 +126,8 @@ One file per trained model, containing one table per order. Sparse: only observe
     "method": "kfold-10",
     "score": "mean_nll_per_transition",
     "threshold": null,
-    "percentile": 99
+    "percentile": 99,
+    "call_threshold": null
   }
 }
 ```
@@ -154,7 +155,7 @@ Compute scores of held-out normal sessions with 10-fold cross-validation (plain 
 
 - Split by **session**, never by event; keep all sessions of one `run_id` in the same fold if there are several runs (the data have a single run\_id, so this does not apply).
 - Metrics: ROC-AUC, PR-AUC, precision/recall/F1 at the calibrated threshold, and recall per `attack_type`.
-- Compare: order K = 1, 2, 3 (1 and 2 are primary; with about 2,700 training calls, 3 is sparse, so treat it and the order-inversion indicator as exploratory); smoothing modes; baselines (a) set of seen tool-bigrams ('stide'-style lookup, Forrest et al. 1996), (b) bag-of-tools frequency model.
+- Compare: order K = 1, 2, 3 (1 and 2 are primary; with about 2,700 training calls, 3 is sparse, so treat it and the order-inversion indicator as exploratory); smoothing modes; baselines (a) set of seen tool-bigrams ('stide'-style lookup), (b) bag-of-tools frequency model.
 - Report confidence intervals (bootstrap over sessions). Be explicit about the small sample size.
 
 ### 7.3 Attack types and what a sequence model can see
@@ -216,7 +217,7 @@ Total transitions: 7 + 5 = 12. Scoring the adversarial sample session (f06c...: 
 
 **Suggested structure**
 
-All code lives in a new top-level folder `b3-markov-chain/`, laid out like `b1-binary-classifier/`: the same files and the same layers (`domain/` holds pure logic, `adapters/` holds I/O, `main.py` trains, `scorer.py` scores the stream).
+All code lives in a new top-level folder `b3-markov-chain/`, laid out like `b1-binary-classifier/`: the same files and the same layers (`domain/` holds pure logic, `adapters/` holds I/O, `main.py` trains). From v0.3 there is no `scorer.py`: live scoring is done by the stream pipeline (Sec. 14).
 
 ```
 b3-markov-chain/
@@ -229,14 +230,13 @@ b3-markov-chain/
 ├── src/b3_markov/
 │   ├── __init__.py
 │   ├── main.py            # CLI: load sessions, fit, calibrate, evaluate, save, announce
-│   ├── scorer.py          # stream scorer: tool-calls.B -> scores
-│   ├── events.py          # anomaly.scored event, detector "b3_markov"
 │   ├── domain/
 │   │   ├── __init__.py
-│   │   ├── sessions.py    # SessionBuffer, FinishedSession (as in B1; Sec. 3.2)
+│   │   ├── sessions.py    # FinishedSession, grouping of batch events (Sec. 3.2)
 │   │   ├── sequences.py   # tool-name sequence, <START>/<END>/<UNK> padding, order-K states (Sec. 4.1)
-│   │   ├── training.py    # transition counts, smoothing, CV threshold, metrics (Secs. 4.2, 4.3, 7)
-│   │   └── scoring.py     # NLL, n_unseen, min_p, worst transition (Sec. 6)
+│   │   ├── training.py    # counts, smoothing, CV session + call thresholds, metrics (Secs. 4.2, 4.3, 7, 14.3)
+│   │   ├── scoring.py     # step(), NLL, n_unseen, min_p, worst transition (Secs. 6, 14.3)
+│   │   └── arguments.py   # flags, featurizer, emission model (Sec. 13)
 │   └── adapters/
 │       ├── __init__.py
 │       ├── dataset.py     # dataset files and analytics_db -> sessions
@@ -246,7 +246,6 @@ b3-markov-chain/
     ├── test_sequences.py
     ├── test_training.py
     ├── test_scoring.py
-    ├── test_scorer.py
     └── test_model_store.py
 ```
 
@@ -283,7 +282,7 @@ CMD ["python", "-m", "b3_markov.main", "--source", "db", "--announce"]
 
 The table is embedded because it is this model's output, so consumers need no access to the models folder. As with B1, the exact message belongs to B4 and may change.
 
-**Scorer (`python -m b3_markov.scorer`).** As in B1: consumes `tool-calls.B` and `model-updates`, buffers events per session, scores at `session.ended` with the newest model and publishes `anomaly.scored` to `scores` (key session\_id). Detector name `b3_markov`; `score` = mean NLL per transition (Sec. 6); extra fields `n_unseen` and `threshold`. On a `model.trained` message for `b3-markov-chain` it reloads, using the embedded table when present. Environment: `KAFKA_BOOTSTRAP`, `B3_INPUT_TOPICS` (default `tool-calls.B`), `B3_MODELS_DIR`, `B3_MODEL_KIND` (smoothing name).
+**Live scoring (moved out in v0.3).** The former `scorer.py` (consumer of `tool-calls.B` and `model-updates`, publisher of `anomaly.scored` with detector `b3_markov`) is removed from this spec. Live events, including the session score of Secs. 6 and 13.4, are scored by the stream pipeline in [Spec: Real-Time Markov Order Check for Tool-Call Streams](https://claude.ai/artifact/CmhxLxENDtDCbT4eSCnM34), which publishes with detector `markov`. This pipeline's only Kafka output is the `model.trained` message above. See Sec. 14.
 
 **Tests (minimum)**
 
@@ -293,7 +292,7 @@ The table is embedded because it is this model's output, so consumers need no ac
 4. `test_sessions` (carried over from B1): calls come back in `session_call_index` order, a session without a start is skipped, a session without calls is still returned.
 5. `test_scoring`: an unseen transition raises `n_unseen`; an out-of-vocabulary tool gives a finite NLL (additive) or epsilon (floor); a session equal to a training session scores lower than one with a new transition.
 6. `test_model_store`: save then load scores identically; `announce()` with a fake producer sends to `model-updates` with key `b3-markov-chain` and the table in `data.transition_table`.
-7. `test_scorer`: returns an `anomaly.scored` event with detector `b3_markov` at `session.ended`; returns nothing while no model is loaded; reloads on a `model.trained` message.
+7. `test_scorer` is removed in v0.3 (moved to the stream pipeline, stream spec Sec. 10.4); the v0.3 tests are listed in Sec. 14.5.
 
 **Acceptance criteria:** `pytest` passes; output is deterministic for fixed input and seed; `transition_table.json` validates against the schema in Sec. 5; `metrics.json` and the README table cover all configurations in Sec. 7.2; `docker build` then running the image with the default command publishes exactly one message to `model-updates` with key `b3-markov-chain`.
 
@@ -307,7 +306,7 @@ The table is embedded because it is this model's output, so consumers need no ac
 ## 11. Decisions and open questions
 
 1. **Decided:** about 269 normal sessions, at most 10 calls each. Orders 1 and 2 are primary, order 3 is exploratory, and thresholds come from 10-fold cross-validation.
-2. **Decided:** detection at session level; prefix (online) scoring is not required.
+2. **Decided:** detection at session level; prefix (online) scoring is not required here; from v0.3 the separate stream pipeline adds call-level online checks (Sec. 14).
 3. **Decided:** no argument-level features. Four of nine attack types are then invisible (Sec. 7.3).
 4. **Decided:** 231 adversarial sessions, 9 attack types; no failed calls in normal data, so the success flag is dropped.
 5. **Open:** how many adversarial sessions per attack type? Balanced counts make the roughly 56% recall ceiling in Sec. 7.3 exact; skewed counts change it.
@@ -322,9 +321,6 @@ The table is embedded because it is this model's output, so consumers need no ac
 - N. Ye, "A Markov Chain Model of Temporal Behavior for Anomaly Detection," IEEE SMC Workshop on Information Assurance and Security, 2000.
 - N. Ye, Y. Zhang, C. M. Borror, "Robustness of the Markov-Chain Model for Cyber-Attack Detection," IEEE Trans. Reliability 53(1), 2004.
 - W.-H. Ju, Y. Vardi, "A Hybrid High-Order Markov Chain Model for Computer Intrusion Detection," J. Computational and Graphical Statistics 10(2), 2001.
-- S. Forrest, S. Hofmeyr, A. Somayaji, T. Longstaff, "A Sense of Self for Unix Processes," IEEE Symp. Security and Privacy, 1996.
-- C. Warrender, S. Forrest, B. Pearlmutter, "Detecting Intrusions Using System Calls: Alternative Data Models," IEEE Symp. Security and Privacy, 1999.
-- S. F. Chen, J. Goodman, "An Empirical Study of Smoothing Techniques for Language Modeling," Computer Speech and Language 13(4), 1999.
 
 Note: the Sha et al. paper and the first four items appear in its own reference list; Warrender et al. and Chen and Goodman were added from general knowledge, so verify the bibliographic details before citing.
 
@@ -357,7 +353,7 @@ The sequence part of Secs. 4 to 6 is unchanged. Every call is additionally mappe
 | save\_draft | content | clean, secret, injection | pattern match on subject and body |
 | save\_draft | body\_vs\_checked | same, changed, unchecked | body equals the last scanned text (or last tone draft); differs (post-check tamper); nothing checked before |
 
-Any absent argument gives the value missing, or clean and unchecked where that applies. Patterns: secret = password, passwd, card number, credit card, cvv, ssn, api key, token, iban, 16-digit groups, or a letters-plus-digits password-like string; injection = ../, SQL comment or DROP TABLE, UNION SELECT, script tags, backticks, /etc/passwd. These lexicons are prior knowledge, not learned, and must be listed in the report.
+Any absent argument gives the value missing, or clean and unchecked where that applies. Text arguments are read under any of their usual names (text, draft, body: the real dataset sends text to sensitive\_content\_scan, the mock agents send draft), and texts are compared after collapsing whitespace; if either text is absent the consistency flag is unchecked, never changed. Patterns: secret = password, passwd, card number, credit card, cvv, ssn, api key, token, iban, 16-digit groups, or a letters-plus-digits password-like string; injection = ../, SQL comment or DROP TABLE, UNION SELECT, script tags, backticks, /etc/passwd. These lexicons are prior knowledge, not learned, and must be listed in the report.
 
 Tried and dropped: duration\_ms, time\_since\_previous\_call\_ms, requested\_tone, style\_profile and body length. In the data they show no separation between normal and adversarial sessions and would only add false alarms. Timing remains out of scope.
 
@@ -380,7 +376,7 @@ The threshold is calibrated exactly as in Sec. 7.1 (10-fold held-out normal scor
 
 ### 13.6 Table and message changes
 
-spec\_version becomes 0.2. The JSON gets two optional blocks: arguments = {featurizer: {known\_domains (domain to count), min\_domain\_count, date\_window\_days, date\_slack\_days}, emission: {alpha, tools: {tool: {flag: {n, counts}}}}} and scoring = {score: joint | joint\_max | seq | args}. A v0.1 file (no arguments block) loads as a sequence-only model. calibration.threshold is per order and refers to the configured score. The model-updates message embeds the same table. anomaly.scored keeps score = the configured score and adds seq\_score, arg\_score and worst\_arg to data.
+spec\_version becomes 0.2. The JSON gets two optional blocks: arguments = {featurizer: {known\_domains (domain to count), min\_domain\_count, date\_window\_days, date\_slack\_days}, emission: {alpha, tools: {tool: {flag: {n, counts}}}}} and scoring = {score: joint | joint\_max | seq | args}. A v0.1 file (no arguments block) loads as a sequence-only model. calibration.threshold is per order and refers to the configured score. The model-updates message embeds the same table. anomaly.scored keeps score = the configured score and adds seq\_score, arg\_score and worst\_arg to data (from v0.3 published by S08 as extension fields inside data of S04's anomaly.scored envelope; see Sec. 14.2).
 
 ### 13.7 Implementation changes (supersedes parts of Sec. 9)
 
@@ -388,7 +384,7 @@ spec\_version becomes 0.2. The JSON gets two optional blocks: arguments = {featu
 - New module domain/arguments.py (flags, featurizer, emission model); scoring.py gets a Detector that combines the chain and the emissions; training.py fits and evaluates the detector.
 - New CLI flags: --no-arguments (v0.1 behaviour), --score joint|joint\_max|seq|args, --arg-alpha, --min-domain-count, --date-slack-days.
 - Dependencies: none at run time (the earlier scikit-learn note in Sec. 9 is superseded; fold splitting and AUC are implemented in pure Python).
-- Extra tests: flag rules per tool and value; featurizer fitted on training only; emission rows sum to 1; unseen flag value is unlikely; post-check tamper gives body\_vs\_checked changed; detector table round trip and v0.1 compatibility; a held-out normal session with an unknown domain is not a training leak; scorer event carries the new fields.
+- Extra tests: flag rules per tool and value; featurizer fitted on training only; emission rows sum to 1; unseen flag value is unlikely; post-check tamper gives body\_vs\_checked changed; detector table round trip and v0.1 compatibility; a held-out normal session with an unknown domain is not a training leak; the stream pipeline's session event carries the new fields (tested there, Sec. 14).
 
 ### 13.8 Limitations of v0.2
 
@@ -396,3 +392,119 @@ spec\_version becomes 0.2. The JSON gets two optional blocks: arguments = {featu
 - With about 70 to 269 normal sessions, rare legitimate recipients (for example a one-off partner domain) become false alarms; min\_domain\_count trades this off.
 - Naive Bayes ignores correlations between flags and between neighbouring calls; an order-1 dependency of flags on the previous call is a possible extension.
 - The data come from one scripted generator; real agent traffic will have more varied arguments.
+
+## 14. Revision v0.3: live scoring moves to the stream pipeline
+
+### 14.1 Why
+
+Up to v0.2 this spec had two jobs: learn the model from history (batch) and score live events from `tool-calls.B` (stream, `scorer.py`). A separate stream mining pipeline now checks the order of live calls against this model, specified in [Spec: Real-Time Markov Order Check for Tool-Call Streams](https://claude.ai/artifact/CmhxLxENDtDCbT4eSCnM34). Keeping both scorers would mean two services consuming the same model and events and publishing scores for the same sessions under two detector names, so downstream consumers would count each session twice, and two copies of the streaming code would have to be kept in step. v0.3 therefore narrows this spec to the batch layer: learn, calibrate, evaluate, announce. All live scoring, including the session score of Secs. 6 and 13.4, is done by the stream pipeline, which publishes it with detector `markov`. This is the batch-layer / speed-layer split of the Lambda architecture (Kiran et al. 2015). The transition table and the `model.trained` message are the contract between the two.
+
+### 14.2 Removed
+
+- `scorer.py`, `events.py` (the `anomaly.scored` builder) and `test_scorer.py`; the streaming `SessionBuffer` in `domain/sessions.py` (the batch grouping of Sec. 3.2 stays).
+- Environment variables `B3_INPUT_TOPICS`, `B3_MODELS_DIR`, `B3_MODEL_KIND`.
+- Superseded wording: the last sentence of Sec. 13.6 (the `anomaly.scored` fields `seq_score`, `arg_score`, `worst_arg` are now published by the stream pipeline under detector `markov`, as extension fields inside data of the anomaly.scored envelope that S04 (Online Forest) publishes, whose shared core is scored\_event\_id, agent\_id, detector, model\_version and score (S08 Sec. 7)), and in Sec. 13.7 the note that "the stream buffer keeps arguments and the event timestamp" (now a requirement of the stream pipeline).
+
+### 14.3 Added
+
+- **Call-level threshold.** The stream pipeline flags a single call as `out_of_order` when the log-probability of its transition falls below a threshold. That threshold is calibrated here, because only the batch side has the held-out normal scores. In the same 10-fold CV as Sec. 7.1, compute for each held-out normal session `m(s) = min over t of ln p(x_t | state_t)` over all T+1 transitions. Then `call_threshold[K]` = the (100 - p)-th percentile of the held-out `m(s)`, with the same p as the session threshold (default 99, so the 1st percentile). A session raises at least one call alert exactly when `m(s) < call_threshold`, so this controls the per-session false-alarm rate of the call check at about 1%, a split-conformal argument (Laxhammar and Falkman 2015; stream spec Sec. 6).
+- **metrics.json additions.** Per normal session: held-out `m(s)`. The false-alarm rate of the call check, of the session threshold and of their union (CV). Per attack type: share of adversarial sessions with `m(s) < call_threshold`, and the index of the first call below it. This is an offline preview of the stream pipeline's call-level recall and earliness.
+- **Step function.** `domain/scoring.py` exposes `step(table, order, context, symbol) -> (lp, count, state_total)`, and whole-session scoring is rewritten as a fold over `step`, so batch and stream share one code path. `domain/arguments.py` featurizes one call given an argument context (last tone draft, last scanned text). The stream pipeline imports these modules; it never copies them.
+- **Agents.** The `model.trained` message gets `data.agents`, the agents whose traffic the model was trained on (CLI `--agents`, default `B`). The stream pipeline applies a model only to those agents.
+- **Fold models.** `--save-fold-models` writes the ten CV fold tables to `models/b3-markov-chain/<version>/folds/fold_<i>.json`, so the stream replay can score each normal session with a model that never saw it.
+- `spec_version` becomes 0.3. A 0.2 table (no `call_threshold`) still loads; the stream pipeline then falls back to flagging unseen transitions.
+
+### 14.4 Calibration block (v0.3)
+
+```json
+"calibration": {
+  "method": "kfold-10",
+  "score": "joint",
+  "percentile": 99,
+  "threshold": {"1": 3.12, "2": 2.87},
+  "call_threshold": {"1": -6.05, "2": -5.92},
+  "call_statistic": "min_log_p_per_session"
+}
+```
+
+The numbers are placeholders. `threshold` is the session threshold of Sec. 7.1 on the configured score (higher means more anomalous); `call_threshold` is a log-probability (lower means more anomalous).
+
+### 14.5 Tests (v0.3)
+
+- `test_training`: `call_threshold` equals the (100 - p)-th percentile of the held-out `m(s)`; adversarial sessions never change it.
+- `test_scoring`: folding `step` over a session gives exactly the whole-session NLL of Sec. 6; `m(s)` equals the minimum of the step log-probabilities; the worked example of Sec. 8 gives the expected minimum.
+- `test_model_store`: `announce()` includes `data.agents` and `calibration.call_threshold`; a v0.2 table without `call_threshold` loads.
+- `--save-fold-models` writes ten tables, and none of them counts a session from its own fold.
+
+### 14.6 Acceptance criteria (v0.3)
+
+Unchanged from Sec. 9, plus: no module of this package consumes a Kafka topic or publishes to `scores`; the parity test of the stream spec (Sec. 10.4) passes against this package's `scoring.py`.
+
+### 14.7 Decisions
+
+- Decided: live scoring (call-level checks and session score) lives only in the stream pipeline; detector `b3_markov` is retired in favour of `markov`.
+- Decided: thresholds for both checks come from this pipeline's cross-validation; the stream pipeline never fits or calibrates anything.
+- Decided: the model is never updated from live traffic (poisoning risk, Rubinstein et al. 2009); retraining goes through this pipeline.
+
+References added in v0.3 (full entries in the stream spec, Sec. 12): M. Kiran, P. Murphy, I. Monga, J. Dugan, S. S. Baveja, "Lambda Architecture for Cost-Effective Batch and Speed Big Data Processing," IEEE Big Data 2015; R. Laxhammar, G. Falkman, "Inductive Conformal Anomaly Detection for Sequential Detection of Anomalous Sub-Trajectories," Annals of Mathematics and Artificial Intelligence 74(1–2), 2015; B. I. P. Rubinstein et al., "ANTIDOTE: Understanding and Defending against Poisoning of Anomaly Detectors," ACM IMC 2009.
+
+## 15. Revision v0.4: one model per agent, and Agent A
+
+### 15.1 Why
+
+The stream pipeline (S08, [Spec: Real-Time Markov Order Check for Tool-Call Streams](https://claude.ai/artifact/CmhxLxENDtDCbT4eSCnM34)) scores both `tool-calls.A` and `tool-calls.B`. Agent A uses different tools from Agent B, so a model learned from Agent B cannot score it. v0.4 trains one model per agent from that agent's own data.
+
+### 15.2 Per-agent models (supersedes the "Agents" item of Sec. 14.3)
+
+- New CLI flag `--agent A|B` (default `B`). One run trains one agent's model.
+- Output goes to `models/b3-markov-chain/<agent>/<version>/`.
+- The `model.trained` message is keyed `b3-markov-chain.<agent>` (constant `MODEL_NAME` plus the agent) and carries `data.agent`. A compacted `model-updates` topic then keeps the newest model of each agent; with a single key, a new B model would hide the A model. This replaces the `data.agents` list of Sec. 14.3.
+- `tool_call.failed` events count as calls for both agents (Secs. 3.1 and 3.2 listed only `tool_call.completed`). The state stays tool-name only (Sec. 4.1), so a failed call and a successful call of the same tool are the same symbol.
+
+### 15.3 Agent A data and adapter
+
+Agent A's recorded dataset is a JSONL file of wrapped records. Each line has `source`, `agent` (`datalens`), `case_id`, `scenario`, `category`, `attack_type`, an observed-behaviour `label` and `label_version`, `label_evidence_event_ids`, `policy_denied_event_ids`, and the event itself under `event`. The events use payload `agent-run-events-v2`, which differs from the flat live envelope:
+
+- The tool name is in `tool_call.requested` as `data.name`, with `data.kind`, `data.features` and `data.arguments_sha256`; the clear arguments are not recorded.
+- `tool_call.completed` / `tool_call.failed` carry only `status`, a `reason` for failures and the policy evaluation, joined to the request by `tool_call_id`.
+- A request for a tool that does not exist has no `name` and `kind = unknown`; the runtime fails it with reason `unknown_tool`.
+- `model_call.completed` / `model_call.failed` events are interleaved.
+
+`adapters/dataset.py` gets an Agent A reader (`--dataset-file`) that unwraps `event`, joins each request with its result by `tool_call_id`, orders calls by `session_call_index`, maps a missing name to `<UNK>`, counts failed calls, ignores `model_call.*`, and takes the session label from the wrapper's `category`. The stream pipeline parses the same payload (S08 Sec. 3.1), so batch and stream see the same sequence.
+
+### 15.4 Profile of the recorded file (Step 0 for Agent A)
+
+Computed on the file provided on 22 Nov 2026 (999 records):
+
+- 130 sessions, each with its own `run_id`: 73 `normal` and 57 `prompt_injected` (attack type `direct_prompt_injection`).
+- 0 to 3 tool calls per session; 237 calls in total. Named tools: `aggregate_statistics` (85), `finalize_statistics` (55), `inspect_dataset` (39), `request_clarification` (24), `correlate_columns` (15), `describe_columns` (3). Plus 16 calls to tools that do not exist, 13 of them in normal sessions.
+- 20 failed calls: 16 `unknown_tool`, 3 `execution_result`, 1 `policy_denied` (in a prompt-injected session).
+- Normal training data: 143 calls, 216 padded transitions, 27 distinct transitions.
+- **Exact-sequence overlap:** 51 of 57 prompt-injected sessions have a tool-name sequence identical to some normal session's. Session-level recall of any sequence-only model is therefore at most 6 of 57 (about 11%). Four of the 6 have no tool call at all.
+- Behaviour labels: `tool_trace_allowed` 53, `insufficient_evidence` 47, `model_failure` 28, `policy_blocked` 1, `answer_violation` 1. There are no per-rule `violated_rules` as in Agent B's labels.
+
+### 15.5 Agent A model settings
+
+- **Training filter:** `category == "normal"` from the wrapper (73 sessions). As a sensitivity check, also train without the 13 normal sessions labelled `model_failure` and report the difference.
+- **Sequence only:** the clear arguments are not recorded, so `--no-arguments` is forced for Agent A, and the score is `seq`. The `features` (`operation`, `method`, `column_count`, `dataset_selection`) are a candidate argument alphabet for a later version.
+- **Order:** K = 1 primary. With 216 transitions, order 2 contexts would be almost all unseen; report it as exploratory only.
+- **Percentile:** default 95 for Agent A (`--percentile` per run). With 73 sessions, the 99th percentile is effectively the single largest held-out score, so it cannot be estimated. Report 90 and 99 as sensitivity checks, and the implied false-alarm rate with a bootstrap interval.
+- **Smoothing:** additive, alpha tuned by 10-fold CV as in Sec. 4.3; with so few transitions, smoothing dominates for rare contexts, so report alpha sensitivity.
+- **Fixed vocabulary:** Agent A's toolset is `statistics-tools-v1`. It has four numerical tools defined in the agent's `tools/` folder (`inspect_dataset`, `describe_columns`, `aggregate_statistics`, `correlate_columns`) and two control tools recorded with `kind = control` (`finalize_statistics`, `request_clarification`). New flag `--vocabulary` (comma-separated) fixes V to this declared list instead of the tools seen in training. All six do appear in the 73 normal sessions, so today the result is the same. The fixed list keeps |V\_next| and the smoothing stable across retrains, and gives a tool that is declared but unseen a smoothed probability instead of `<UNK>`. Rarity warning: `describe_columns` occurs once in the normal sessions, so its outgoing row is mostly smoothing; report its transitions separately.
+
+### 15.6 Agent A evaluation
+
+As Sec. 7, with the 57 prompt-injected sessions as positives: ROC-AUC, PR-AUC, recall at the calibrated threshold, plus recall per behaviour label. State the 6-of-57 ceiling next to every recall figure; a low recall is the expected, reportable result, because these injections mostly change what the agent says or computes, not which tools it calls in which order. S08's replay adds earliness and the overlap with S07.
+
+### 15.7 Tests (v0.4)
+
+- Agent A reader: a requested/completed pair gives one call with the requested name; an unnamed request gives `<UNK>`; a failed call is kept; `model_call.*` is ignored; the wrapper's `category` becomes the session label.
+- Agent B reader: a `tool_call.failed` event is kept as a call.
+- `test_model_store`: `announce()` uses key `b3-markov-chain.<agent>` and sets `data.agent`; models of A and B are written to separate folders.
+- `--no-arguments` is enforced for `--agent A`.
+
+### 15.8 Open
+
+- Resolved: Agent A's tool list. The `tools/` folder of `datalens-agent` defines the four numerical tools; the executor fails any other name with `unknown_tool`. With the two control tools, all six appear in the recorded normal sessions, so no legitimate tool is missing from training.
+- The example live `tool-calls.A` message passes `correlate_columns` a `columns` list and `dataset_id: "ds-21"`, but the tool's argument schema uses `x_column` / `y_column` and a UUID `dataset_id`, validated strictly. Confirm which format live Agent A sends before building argument features for it.
+- If live `tool-calls.A` carries clear arguments, an argument part for Agent A's model can be added once a recorded dataset with clear arguments exists.

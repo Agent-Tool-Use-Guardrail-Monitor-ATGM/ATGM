@@ -133,6 +133,29 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  markov-order-check:                      # S08 Markov order check: live tool-call order vs. B3 models (services/stream-processing/s08-markov-order-check)
+    build:
+      context: ./services                  # the image also installs the B3 package (services/batch-processing/b3-markov-chain)
+      dockerfile: stream-processing/s08-markov-order-check/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: markov-order-check
+      MARKOV_ORDER_A: "1"                  # Agent A: 73 normal sessions support order 1 only
+      MARKOV_ORDER_B: "2"
+      MARKOV_RULE: threshold               # out_of_order when ln p < calibration.call_threshold (falls back to unseen)
+      MARKOV_CALL_ALERTS_A: "false"        # Agent A call alerts computed, not published (spec Sec. 6)
+      MARKOV_CALL_ALERTS_B: "true"
+      MARKOV_EMPTY_SESSION_A: alert        # empty sessions: alert | tag | drop (spec Sec. 5.2)
+      MARKOV_EMPTY_SESSION_B: tag
+      AGENT_A_DATASET: /data/agent_a/all-events.jsonl   # read only by the tests (docker compose run --rm markov-order-check python -m pytest -q)
+    volumes:
+      - ./dataset/agent_a:/data/agent_a:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    
   sliding-top-k:                          
     build: ./services/stream-processing/s03-sliding-top-k
     environment:
