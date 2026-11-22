@@ -10,8 +10,8 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 | S04 | `s04-online-forest/` | Online Isolation Forest | Fanni | score → `scores` | ✅ |
 | S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | to do |
 | S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | to do |
-| S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | to do |
-| S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | to do |
+| S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | ✅ |
+| S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | ✅ |
 | S09 | `s09-dspot/` | DSPOT alarm thresholds | Áron | alarm → `alerts` | ✅ |
 | S10 | `s10-aci/` | ACI conformal triage | Áron | decision → `flags`, `review-queue` | ✅ |
 

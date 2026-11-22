@@ -168,6 +168,17 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+
+  allow-list:
+    build: ./services/stream-processing/s07-allow-list-check
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: allow-list-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   aci:                                     # S10 conformal triage: pass / flag / review (services/stream-processing/s10-aci)
     build: ./services/stream-processing/s10-aci
     environment:
