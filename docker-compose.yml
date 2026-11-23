@@ -94,7 +94,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       DSPOT_Q: "0.001"                     # false-alarm probability on normal scores
-      DSPOT_WARMUP: "3000"                 # normal scores per (agent, detector) before alarms start
+      DSPOT_WARMUP: "500"                 # normal scores per (agent, detector) before alarms start
     depends_on:
       kafka-init:
         condition: service_completed_successfully
