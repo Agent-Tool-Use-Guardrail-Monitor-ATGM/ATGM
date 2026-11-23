@@ -34,3 +34,21 @@
 /services/batch-processing/b2-violation-type-classifier/ @AsmarBaghirova
 /services/batch-processing/b3-markov-chain/           @orkaagi
 /services/batch-processing/b4-retraining-and-model-registry/ @maksimkins
+
+# Grafana dashboards (setup: Áron; each dashboard: its algorithm's owner)
+/services/visualization/                                                       @PappAron
+/services/visualization/dashboards/overview.json                               @PappAron
+/services/visualization/dashboards/stream/s01-online-bls.json                  @maksimkins
+/services/visualization/dashboards/stream/s02-optwin.json                      @maksimkins
+/services/visualization/dashboards/stream/s03-sliding-top-k.json               @ofanni03
+/services/visualization/dashboards/stream/s04-online-forest.json               @ofanni03
+/services/visualization/dashboards/stream/s05-spacesaving.json                 @AsmarBaghirova
+/services/visualization/dashboards/stream/s06-kswin.json                       @AsmarBaghirova
+/services/visualization/dashboards/stream/s07-allow-list-check.json            @orkaagi
+/services/visualization/dashboards/stream/s08-markov-order-check.json          @orkaagi
+/services/visualization/dashboards/stream/s09-dspot.json                       @PappAron
+/services/visualization/dashboards/stream/s10-aci.json                         @PappAron
+/services/visualization/dashboards/batch/b1-binary-classifier.json             @ofanni03
+/services/visualization/dashboards/batch/b2-violation-type-classifier.json     @AsmarBaghirova
+/services/visualization/dashboards/batch/b3-markov-chain.json                  @orkaagi
+/services/visualization/dashboards/batch/b4-retraining-and-model-registry.json @maksimkins

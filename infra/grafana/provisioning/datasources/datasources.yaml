@@ -1,6 +1,7 @@
 apiVersion: 1
 datasources:
   - name: ATGM (PostgreSQL)
+    uid: atgm-postgres                   # dashboards refer to this id
     type: grafana-postgresql-datasource
     url: postgres:5432
     user: grafana_ro

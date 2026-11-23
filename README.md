@@ -47,17 +47,19 @@ All platform services restart automatically after a server reboot (`restart: unl
 
 ```
 docker-compose.yml          everything that runs: platform, services, mocks (profile)
-infra/                      platform configuration used by the containers: Kafka topics, database setup, Grafana
+infra/                      platform configuration used by the containers: Kafka topics, database setup, Grafana provisioning
 deploy/                     deployment targets: azure/ (one VM, scripted), k8s/ (stretch goal)
 services/
   agent-a/                  pointer only: Agent A lives in its own repository (see below)
+  agent-a-adapter/          Agent A telemetry (agent.events.v1) -> tool-calls.A, plus a replayer of recorded sessions (Áron)
   agent-b/                  Agent B, e-mail drafting agent (Fanni, Ági)
   scenario-generator/       Áron
   mocks/                    temporary stand-ins for agents and detectors (Áron)
   review-queue/             review queue with a simulated reviewer (Áron)
   storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
   stream-processing/        stream stages S01-S10, two per member (see its README)
-  batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining (placeholders)
+  batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining
+  visualization/            Grafana dashboards: overview + one per algorithm, each owned by its author
 docs/                       design documents, work plan, timeline and figures
 ```
 
