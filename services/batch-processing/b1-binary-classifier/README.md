@@ -66,3 +66,13 @@ outcome `needs_input`) or did not finish, while most compliant sessions complete
 model mainly learns "asked for clarification / did not finish", which is visible in the tool calls but
 is not a violation. Only 6 violations (5 `policy_blocked`, 1 `answer_violation`) are backed by the
 events, too few to train or evaluate on. The model is saved as `b1-binary-a` and not used on the stream.
+
+**Independent holdout** (`b4-holdout`, 183 new Agent B sessions never used for training, 13 compliant):
+
+| Model | Macro F1 | Compliant recall | Violating recall |
+|---|---|---|---|
+| Random forest | 0.961 | 1.000 | 0.988 |
+| Logistic regression | 0.912 | 1.000 | 0.971 |
+
+The holdout comes from the same agent and model, so it shows generalisation to new sessions of
+this agent, not to an agent that behaves differently (see the timing limitation below).
