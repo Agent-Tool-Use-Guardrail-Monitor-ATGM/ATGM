@@ -6,7 +6,7 @@ it sees (fine for a mock, not for production: no poisoning protection):
 
     tool call:   -log P(tool | previous tool)            (unseen tools and orders are surprising)
                  + 0.5 * z-score of the argument length   (only above the usual length)
-                 + 3 if the arguments look like a secret  (password, card number, path traversal)
+                 + 4 if the arguments look like a secret  (password, card number, path traversal)
                  + 1 if the call failed
     session end: -log P(end | last tool) + |z-score of the number of calls|   (skipped steps)
 """
@@ -63,7 +63,7 @@ class MockScorer:
             args = json.dumps(data.get("arguments", {}), sort_keys=True)
             score = (self._surprise(agent, prev, tool)
                      + 0.5 * max(self._arg_len[(agent, tool)].z(len(args)), 0.0)
-                     + (3.0 if _SECRET.search(args) else 0.0)
+                     + (4.0 if _SECRET.search(args) else 0.0)
                      + (0.0 if data.get("success", True) else 1.0))
             self._learn(agent, prev, tool)
             self._arg_len[(agent, tool)].add(len(args))

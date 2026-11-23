@@ -112,6 +112,30 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  online-bls:
+    build: ./services/stream-processing/s01-online-bls
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ONLINE_BLS_STATE: /state/online-bls.sqlite3
+    volumes:
+      - online-bls-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  optwin:
+    build: ./services/stream-processing/s02-optwin
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      OPTWIN_STATE: /state/optwin.sqlite3
+    volumes:
+      - optwin-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   online-forest:
     build: ./services/stream-processing/s04-online-forest
     environment:
@@ -122,11 +146,56 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  markov-order-check:                      # S08 Markov order check: live tool-call order vs. B3 models (services/stream-processing/s08-markov-order-check)
+    build:
+      context: ./services                  # the image also installs the B3 package (services/batch-processing/b3-markov-chain)
+      dockerfile: stream-processing/s08-markov-order-check/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: markov-order-check
+      MARKOV_ORDER_A: "1"                  # Agent A: 73 normal sessions support order 1 only
+      MARKOV_ORDER_B: "2"
+      MARKOV_RULE: threshold               # out_of_order when ln p < calibration.call_threshold (falls back to unseen)
+      MARKOV_CALL_ALERTS_A: "false"        # Agent A call alerts computed, not published (spec Sec. 6)
+      MARKOV_CALL_ALERTS_B: "true"
+      MARKOV_EMPTY_SESSION_A: alert        # empty sessions: alert | tag | drop (spec Sec. 5.2)
+      MARKOV_EMPTY_SESSION_B: tag
+      AGENT_A_DATASET: /data/agent_a/all-events.jsonl   # read only by the tests (docker compose run --rm markov-order-check python -m pytest -q)
+    volumes:
+      - ./dataset/agent_a:/data/agent_a:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    
+  sliding-top-k:                          
+    build: ./services/stream-processing/s03-sliding-top-k
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TOPK_K: "3"
+      TOPK_SLOT_SECONDS: "30"
+      TOPK_UNITS: "20"                     # window = 20 x 30 s = 10 min
+      TOPK_EPSILON: "5"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  allow-list:
+    build: ./services/stream-processing/s07-allow-list-check
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: allow-list-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
   aci:                                     # S10 conformal triage: pass / flag / review (services/stream-processing/s10-aci)
     build: ./services/stream-processing/s10-aci
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      DETECTORS: mock_scorer               # session score = highest score of these detectors
+      DETECTORS: mock_scorer,b1_classifier       # session score = highest score of these detectors
       ALPHA_NORMAL: "0.05"                 # normal sessions not passed (flagged or reviewed), at most
       ALPHA_ATTACK: "0.1"                  # attack sessions not flagged (passed or reviewed), at most
       AUDIT_RATE: "0.3"                    # random share of sessions sent to review to learn from (attacks are rare)
@@ -134,6 +203,92 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+  b1-scorer:                             
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.scorer"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      B1_INPUT_TOPICS: tool-calls.B
+      B1_MODELS_DIR: /models
+      B1_MODEL_KIND: random_forest      
+    volumes:
+      - b1-models:/models
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  b1-train:
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--model", "random_forest", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  b3-train-a:
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.main", "--agent", "A",
+              "--dataset-file", "/dataset-a/all-events.jsonl",
+              "--exclude-labels", "model_failure",
+              "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    volumes:
+      - b3-models:/models
+      - ./dataset/agent_a:/dataset-a:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+  
+  b3-train:                                # trains on normal sessions, publishes the table to model-updates (key b3-markov-chain)
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--smoothing", "additive", "--orders", "1", "2", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b3-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  b4-retrain:
+    build: ./services/batch-processing/b1-binary-classifier
+    profiles: ["batch"]
+    entrypoint: ["python", "/b4/promote_b1.py", "--source", "db",
+                 "--current-champion", "--dataset-dir", "/dataset", "--models-dir", "/models",
+                 "--promote", "--announce"]
+    command: ["--holdout-scenarios", "b4-holdout.jsonl"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+      - ./services/batch-processing/b4-retraining-and-model-registry:/b4:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   review-queue:                            # review queue + simulated reviewer (services/review-queue)
     build: ./services/review-queue
@@ -214,9 +369,13 @@ services:
 
 volumes:
   agent-a-adapter-state:
+  online-bls-state:
+  optwin-state:
   kafka-data:
   pg-data:
   grafana-data:
+  b1-models:
+  b3-models:
 
 # Named network "atgm": services from other repositories (e.g. datalens-agent) join it
 # to reach kafka:9092 by name. See README, "Connecting a service from another repository".

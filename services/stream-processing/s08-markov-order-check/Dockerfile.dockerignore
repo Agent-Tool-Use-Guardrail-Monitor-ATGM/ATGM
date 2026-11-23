@@ -1,0 +1,9 @@
+# Used by BuildKit for this Dockerfile; paths are relative to the build context (services/).
+*
+!batch-processing/b3-markov-chain/pyproject.toml
+!batch-processing/b3-markov-chain/src/
+!stream-processing/s08-markov-order-check/
+**/__pycache__
+**/*.egg-info
+**/.pytest_cache
+**/.venv*

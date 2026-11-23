@@ -63,3 +63,39 @@ Dockerfile
 - https://medium.com/data-science/building-a-simple-agent-with-tools-and-toolkits-in-langchain-77e0f9bd1fa5
 - https://www.scribd.com/document/893740609/Guide-How-to-Build-an-Agent
 - https://www.langchain.com/blog/tool-calling-with-langchain
+
+## Replay into the pipeline
+
+Ground truth to `scenario_db.ground_truth` (category = actual behaviour from the labels file),
+then the events to `tool-calls.B` at a configurable rate. Same message schema as the live agent.
+
+```bash
+docker compose down -v && docker compose up -d        # clean run (local data only)
+docker compose exec postgres bash /docker-entrypoint-initdb.d/init.sh   # if init.sh failed (macOS)
+docker compose restart storage-sink review-queue grafana
+docker compose --profile batch run --rm b1-train
+# wait until every group on tool-calls.B has a consumer (services start at the latest offset):
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --describe --all-groups | grep tool-calls.B
+cd services/agent-b
+PYTHONPATH=src uv run python src/agent_b/load_ground_truth.py scenario_01_500.jsonl
+PYTHONPATH=src uv run python src/agent_b/event_publisher.py events_for_scenario_01_500.jsonl --delay 0.02
+PYTHONPATH=src uv run python src/agent_b/evaluate_replay.py scenario_01_500.jsonl
+```
+
+### Results (scenario_01_500, 20 Nov 2026)
+
+3969 events, 500 sessions (459 violating, 41 compliant), all stored in `analytics_db`.
+
+| Detector | Sessions | AUC (session max score) | Note |
+|---|---|---|---|
+| `b1_classifier` | 500 | 1.000 | in-sample (model refit on all 500); held-out macro F1 0.922, CV 0.919 |
+| `online_forest` | 488 | 0.239 | ranks compliant sessions higher (1 − AUC = 0.761) |
+
+- Reviewer verdicts: 350 sessions reviewed, 350 agree with the labels.
+- DSPOT alarms: 0. `online_forest` sent 2969 scores, below the 3000 warm-up.
+- `topk_counts`: no scores, as S03 counts alarms and flags and there were none.
+- The forest assumes violations are rare. Here 92% of sessions are violating (the agent invents
+  recipients), so the 41 compliant sessions are the rare ones. Compliant sessions also have long
+  gaps between calls (12 s vs 2.3 s), which the forest finds unusual.
+- 12 sessions have no tool calls, so the forest has no score for them.
