@@ -5,8 +5,8 @@
     python -m b1_classifier.main --model logistic_regression --announce
     python -m b1_classifier.main --agent A                      # Agent A (collector export)
 
-Agent A labels are the planned category (prompt_injected vs. normal): only 2 of its 130 sessions
-broke a rule, too few to learn from. So the Agent A model detects injection attempts, not violations.
+Agent A labels come from the collector export (`label`); model_failure runs are left out.
+Most violating Agent A labels were assigned to balance the dataset, not from evidence (see README).
 
 Environment: ANALYTICS_DB (libpq connection string), KAFKA_BOOTSTRAP (localhost:29092), MODELS_DIR (./models).
 """
@@ -39,7 +39,7 @@ def main() -> None:
 
     if args.agent == "A":
         if args.announce or args.source == "db":
-            parser.error("agent A is an offline experiment: no --announce, no --source db")
+            parser.error("agent A is an offline model: no --announce, no --source db")
         sessions = dataset.from_collector(Path(args.collector_file))
         known_tools, name = KNOWN_TOOLS_A, f"{model_store.MODEL_NAME}-a"
     elif args.source == "db":
@@ -56,8 +56,6 @@ def main() -> None:
 
     result = train_and_evaluate(features, labels, kind=args.model)
     metrics = {**result.metrics, "agent": args.agent}
-    if args.agent == "A":
-        metrics["label_meaning"] = "violating = planned prompt injection, compliant = planned normal"
     folder = model_store.save(result.model, metrics, Path(args.models_dir), name=name)
     print(json.dumps(metrics, indent=2))
     print(f"Model saved to {folder}")
