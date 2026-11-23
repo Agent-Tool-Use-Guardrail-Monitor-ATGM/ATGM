@@ -1,0 +1,33 @@
+{
+  "uid": "atgm-b2-violation-type-classifier",
+  "title": "B2 Violation-type classifier",
+  "tags": [
+    "atgm",
+    "batch"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 6
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Placeholder for B2 Violation-type classifier** (owner: Asmar).\n\nAdd panels in Grafana (*Edit → Add visualization*, data source *ATGM (PostgreSQL)*), then *Share → Export → Save to file* and replace this file (`services/visualization/dashboards/batch/b2-violation-type-classifier.json`). Keep the `uid` `atgm-b2-violation-type-classifier`.\n\nTables: `agent_events`, `scores`, `alarms`, `labels`, `other_events` (see services/storage-sink/README.md)."
+      },
+      "id": 1
+    }
+  ]
+}

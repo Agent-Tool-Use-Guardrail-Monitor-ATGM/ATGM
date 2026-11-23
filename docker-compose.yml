@@ -82,7 +82,8 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set it in .env}
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set it in .env}
     volumes:
-      - ./infra/grafana:/etc/grafana/provisioning/datasources:ro
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro       # data source + dashboard loading
+      - ./services/visualization/dashboards:/etc/grafana/dashboards:ro  # dashboards (one JSON per algorithm)
       - grafana-data:/var/lib/grafana
     depends_on:
       postgres:
