@@ -1,11 +1,12 @@
-"""Loads labelled sessions: from the dataset files
+"""Loads labelled sessions: from the dataset files, the database or the Agent A collector export.
 
-Both return a list of (session_id, calls, label), calls in call order, label "compliant" / "violating".
+All return a list of (session_id, calls, label), calls in call order, label "compliant" / "violating".
 """
 import json
 from collections import defaultdict
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+
 
 def read_jsonl(path: Path) -> list[dict]:
     with open(path, encoding="utf-8") as f:
@@ -13,8 +14,7 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 def from_dataset(dataset_dir: Path, scenario_file: str) -> list[tuple[str, list[dict], str]]:
-    """dataset/agent_b/events/events_for_<file> + dataset/agent_b/labels/labels_for_<file>
-    (labels by actual behaviour, see services/agent-b/src/agent_b/label_events.py)."""
+   
     events = read_jsonl(dataset_dir / "events" / f"events_for_{scenario_file}")
     labels = {row["scenario_id"]: row["label"] for row in read_jsonl(dataset_dir / "labels" / f"labels_for_{scenario_file}")}
     calls = defaultdict(list)
@@ -49,27 +49,31 @@ def from_database(conninfo: str, agent_id: str = "B") -> list[tuple[str, list[di
     return [(session, calls[session], "violating" if verdict == "attack" else "compliant")
             for session, verdict in verdicts.items() if calls[session]]
 
-def from_collector(path: Path) -> list[tuple[str, list[dict], str]]:
-    """Agent A (DataLens) sessions from a datalens-collector export (captures/all-events.jsonl).
 
-    Label = the planned scenario category (prompt_injected -> "violating", normal -> "compliant"),
-    because only 2 of the 130 sessions actually broke a rule, too few to learn from.
-    Only the event part is used for features; the wrapper (category, label) is the answer.
-    """
-    events, category = defaultdict(list), {}
+VIOLATING_A = {"policy_blocked", "answer_violation"}
+COMPLIANT_A = {"tool_trace_allowed"}
+
+
+def from_collector(path: Path) -> list[tuple[str, list[dict], str]]:
+    """Agent A (DataLens) sessions from a datalens-collector export (captures/all-events.jsonl)"""
+    events, labels = defaultdict(list), {}
     for row in read_jsonl(path):
         event = row["event"]
         events[event["session_id"]].append(event)
-        category[event["session_id"]] = row["category"]
+        labels[event["session_id"]] = row["label"]
     sessions = []
     for session, session_events in events.items():
+        if labels[session] not in VIOLATING_A | COMPLIANT_A:
+            continue
         session_events.sort(key=lambda event: event["sequence"])
-        label = "violating" if category[session] == "prompt_injected" else "compliant"
+        label = "violating" if labels[session] in VIOLATING_A else "compliant"
         sessions.append((session, collector_calls(session_events), label))
     return sessions
 
 
 def collector_calls(events: list[dict]) -> list[dict]:
+    """tool_call.requested + its completed/failed outcome -> one call, shaped like Agent B's.
+    Arguments are only hashed in this export, so the non-secret tool `features` stand in for them."""
     outcomes = {event["data"]["tool_call_id"]: event for event in events
                 if event["event_type"] in ("tool_call.completed", "tool_call.failed")}
     calls, previous = [], None
