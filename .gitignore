@@ -225,3 +225,5 @@ __marimo__/
 __pycache__/
 *.pyc
 services/agent-b/src/logs/
+# B2 generated model artifacts
+models/b2-violation-type/
