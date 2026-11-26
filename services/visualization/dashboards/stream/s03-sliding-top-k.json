@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 15,
+  "id": 8,
   "links": [],
   "panels": [
     {
@@ -110,7 +110,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT occurred_at AS time,\n       (data->>'messages')::int AS \"protocol (Chen et al. 2017)\",\n       (data->>'naive_messages')::int AS \"naive\"\nFROM other_events\nWHERE event_type = 'counts.summary' AND agent_id = 'B' AND $__timeFilter(occurred_at)\nORDER BY 1",
+          "rawSql": "SELECT occurred_at AS time,\n       (data->>'messages')::int AS \"protocol (Chen et al. 2017)\",\n       (data->>'naive_messages')::int AS \"naive\"\nFROM other_events\nWHERE event_type = 'counts.summary' AND agent_id = 'B'\n  AND data->>'detector' = 'topk_counts'\n  AND $__timeFilter(occurred_at)\nORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -196,8 +196,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 24,
+        "h": 5,
+        "w": 12,
         "x": 0,
         "y": 8
       },
@@ -224,7 +224,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT o.occurred_at AS time, t->>'item' AS metric, (t->>'count')::int AS value\nFROM other_events o, jsonb_array_elements(o.data->'top') t\nWHERE o.event_type = 'counts.summary' AND o.agent_id = 'B' AND $__timeFilter(o.occurred_at)\nORDER BY 1",
+          "rawSql": "SELECT o.occurred_at AS time, t->>'item' AS metric, (t->>'count')::int AS value\nFROM other_events o, jsonb_array_elements(o.data->'top') t\nWHERE o.event_type = 'counts.summary' AND o.agent_id = 'B'\n  AND o.data->>'detector' = 'topk_counts'\n  AND $__timeFilter(o.occurred_at)\nORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -266,6 +266,6 @@
   "timezone": "browser",
   "title": "S03 Sliding top-k",
   "uid": "atgm-s03-sliding-top-k",
-  "version": 2,
+  "version": 3,
   "weekStart": ""
 }
