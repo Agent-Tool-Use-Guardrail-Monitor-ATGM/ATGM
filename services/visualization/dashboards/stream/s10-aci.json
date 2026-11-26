@@ -15,152 +15,19 @@
   },
   "panels": [
     {
-      "id": 1,
       "type": "text",
       "title": "",
       "gridPos": {
         "x": 0,
         "y": 0,
         "w": 24,
-        "h": 3
+        "h": 6
       },
       "options": {
         "mode": "markdown",
-        "content": "**ACI** decides per finished session: **pass**, **flag** or **review** (human). Session score = highest score of the configured detectors. Thresholds adapt online so that at most 5% of normal sessions are not passed and at most 10% of attacks are not flagged. A random 30% of sessions is audited (sent to review) so ACI can learn from the verdicts."
-      }
-    },
-    {
-      "id": 2,
-      "type": "timeseries",
-      "title": "Decisions per minute",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "atgm-postgres"
+        "content": "**Placeholder for S10 ACI triage** (owner: Áron).\n\nAdd panels in Grafana (*Edit → Add visualization*, data source *ATGM (PostgreSQL)*), then *Share → Export → Save to file* and replace this file (`services/visualization/dashboards/stream/s10-aci.json`). Keep the `uid` `atgm-s10-aci`.\n\nTables: `agent_events`, `scores`, `alarms`, `labels`, `other_events` (see services/storage-sink/README.md)."
       },
-      "gridPos": {
-        "x": 0,
-        "y": 3,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "atgm-postgres"
-          },
-          "rawQuery": true,
-          "editorMode": "code",
-          "format": "time_series",
-          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), data->>'decision' AS metric, count(*) AS value\nFROM other_events WHERE event_type = 'decision.made' AND $__timeFilter(occurred_at)\nGROUP BY 1, 2 ORDER BY 1"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "stacking": {
-              "mode": "normal"
-            },
-            "drawStyle": "bars",
-            "fillOpacity": 80
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 3,
-      "type": "table",
-      "title": "Decisions per agent",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "atgm-postgres"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 3,
-        "w": 12,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "atgm-postgres"
-          },
-          "rawQuery": true,
-          "editorMode": "code",
-          "format": "table",
-          "rawSql": "SELECT data->>'agent_id' AS agent, count(*) AS sessions,\n  count(*) FILTER (WHERE data->>'decision' = 'pass') AS pass,\n  count(*) FILTER (WHERE data->>'decision' = 'flag') AS flag,\n  count(*) FILTER (WHERE data->>'decision' = 'review') AS review,\n  round(100.0 * count(*) FILTER (WHERE data->>'decision' = 'review') / count(*), 1) AS \"review %\",\n  count(*) FILTER (WHERE (data->>'audit')::boolean) AS audits\nFROM other_events WHERE event_type = 'decision.made' AND $__timeFilter(occurred_at)\nGROUP BY 1 ORDER BY 1"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Session score and thresholds (per agent)",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "atgm-postgres"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 11,
-        "w": 24,
-        "h": 9
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "atgm-postgres"
-          },
-          "rawQuery": true,
-          "editorMode": "code",
-          "format": "time_series",
-          "rawSql": "SELECT occurred_at AS time, data->>'agent_id' || ' ' || k AS metric, v AS value\nFROM other_events, LATERAL (VALUES ('score', (data->>'session_score')::float),\n                                   ('pass up to', (data->>'pass_up_to')::float),\n                                   ('flag from', (data->>'flag_from')::float)) AS t(k, v)\nWHERE event_type = 'decision.made' AND $__timeFilter(occurred_at) AND v IS NOT NULL ORDER BY 1"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "points",
-            "pointSize": 4
-          }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "id": 5,
-      "type": "table",
-      "title": "Decisions vs reviewer verdicts (reviewed sessions)",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "atgm-postgres"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 20,
-        "w": 24,
-        "h": 8
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "atgm-postgres"
-          },
-          "rawQuery": true,
-          "editorMode": "code",
-          "format": "table",
-          "rawSql": "SELECT d.data->>'agent_id' AS agent, d.data->>'decision' AS decision,\n  count(*) FILTER (WHERE l.verdict = 'attack') AS \"verdict: attack\",\n  count(*) FILTER (WHERE l.verdict = 'false_alarm') AS \"verdict: normal\"\nFROM other_events d JOIN (SELECT DISTINCT ON (session_id) session_id, verdict FROM labels ORDER BY session_id, occurred_at) l\n  ON l.session_id = d.session_id\nWHERE d.event_type = 'decision.made' AND $__timeFilter(d.occurred_at)\nGROUP BY 1, 2 ORDER BY 1, 2"
-        }
-      ]
+      "id": 1
     }
   ]
 }

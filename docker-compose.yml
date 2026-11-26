@@ -230,8 +230,7 @@ services:
     build: ./services/stream-processing/s10-aci
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      DETECTORS: online_forest,b1_classifier   # session score = highest score of these (both 0..1); add mock_scorer when running the mocks
-      SCORE_BOUND: "1"                     # scores of these detectors lie in [0, 1]
+      DETECTORS: mock_scorer,b1_classifier
       ALPHA_NORMAL: "0.05"
       ALPHA_ATTACK: "0.1"
       AUDIT_RATE: "0.3"
