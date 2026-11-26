@@ -1,7 +1,10 @@
 # ATGM platform: Kafka, PostgreSQL (our single database), Grafana.
-# First time: cp .env.example .env  (and set passwords; .env is git-ignored)
-# Start: docker compose up -d     Stop: docker compose down     Reset all data: docker compose down -v
+# First time: cp .env.example .env (and set passwords; .env is git-ignored)
+# Start: docker compose up -d
+# Stop: docker compose down
+# Reset all data: docker compose down -v
 # Ports are published on 127.0.0.1 only: on the shared server, reach them through an SSH tunnel (see README).
+
 name: atgm
 
 services:
@@ -9,7 +12,7 @@ services:
     image: apache/kafka:3.8.0
     hostname: kafka
     ports:
-      - "127.0.0.1:29092:29092"            # from this machine: localhost:29092 / from containers: kafka:9092
+      - "127.0.0.1:29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -23,7 +26,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_LOG_DIRS: /var/lib/kafka/data
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"   # topics come only from infra/kafka/topics.txt
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     volumes:
       - kafka-data:/var/lib/kafka/data
     restart: unless-stopped
@@ -33,7 +36,7 @@ services:
       timeout: 10s
       retries: 12
 
-  kafka-init:                              # creates the topics once Kafka is up, then exits
+  kafka-init:
     image: apache/kafka:3.8.0
     depends_on:
       kafka:
@@ -46,7 +49,7 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2
     ports:
-      - "127.0.0.1:8080:8080"              # no login: reachable only from this machine (or an SSH tunnel)
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: atgm
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
@@ -77,24 +80,61 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     ports:
-      - "127.0.0.1:3000:3000"              # login: admin / GRAFANA_ADMIN_PASSWORD
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set it in .env}
       GRAFANA_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set it in .env}
     volumes:
-      - ./infra/grafana:/etc/grafana/provisioning/datasources:ro
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/visualization/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     depends_on:
       postgres:
         condition: service_healthy
     restart: unless-stopped
 
-  dspot:                                   # S09 DSPOT alarm thresholds (services/stream-processing/s09-dspot)
+  dspot:
     build: ./services/stream-processing/s09-dspot
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      DSPOT_Q: "0.001"                     # false-alarm probability on normal scores
-      DSPOT_WARMUP: "3000"                 # normal scores per (agent, detector) before alarms start
+      DSPOT_Q: "0.001"
+      DSPOT_WARMUP: "500"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  agent-a-adapter:
+    build: ./services/agent-a-adapter
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ADAPTER_STATE: /state/adapter.sqlite3
+    volumes:
+      - agent-a-adapter-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  online-bls:
+    build: ./services/stream-processing/s01-online-bls
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ONLINE_BLS_STATE: /state/online-bls.sqlite3
+    volumes:
+      - online-bls-state:/state
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  optwin:
+    build: ./services/stream-processing/s02-optwin
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      OPTWIN_STATE: /state/optwin.sqlite3
+    volumes:
+      - optwin-state:/state
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -105,6 +145,51 @@ services:
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       KAFKA_GROUP_ID: online-forest-consumer
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  markov-order-check:
+    build:
+      context: ./services
+      dockerfile: stream-processing/s08-markov-order-check/Dockerfile
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: markov-order-check
+      MARKOV_ORDER_A: "1"
+      MARKOV_ORDER_B: "2"
+      MARKOV_RULE: threshold
+      MARKOV_CALL_ALERTS_A: "false"
+      MARKOV_CALL_ALERTS_B: "true"
+      MARKOV_EMPTY_SESSION_A: alert
+      MARKOV_EMPTY_SESSION_B: tag
+      AGENT_A_DATASET: /data/agent_a/all-events.jsonl
+    volumes:
+      - ./dataset/agent_a:/data/agent_a:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  sliding-top-k:
+    build: ./services/stream-processing/s03-sliding-top-k
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      TOPK_K: "3"
+      TOPK_SLOT_SECONDS: "30"
+      TOPK_UNITS: "20"
+      TOPK_EPSILON: "5"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  allow-list:
+    build: ./services/stream-processing/s07-allow-list-check
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_GROUP_ID: allow-list-consumer
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -124,6 +209,7 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
+
   # S06 KSWIN concept drift detection (Asmar)
   kswin:
     build: ./services/stream-processing/s06-kswin
@@ -138,27 +224,117 @@ services:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
-  aci:                                     # S10 conformal triage: pass / flag / review (services/stream-processing/s10-aci)
+
+  # S10 conformal triage: pass / flag / review
+  aci:
     build: ./services/stream-processing/s10-aci
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
-      DETECTORS: mock_scorer               # session score = highest score of these detectors
-      ALPHA_NORMAL: "0.05"                 # normal sessions not passed (flagged or reviewed), at most
-      ALPHA_ATTACK: "0.1"                  # attack sessions not flagged (passed or reviewed), at most
-      AUDIT_RATE: "0.3"                    # random share of sessions sent to review to learn from (attacks are rare)
+      DETECTORS: online_forest,b1_classifier   # session score = highest score of these (both 0..1); add mock_scorer when running the mocks
+      SCORE_BOUND: "1"                     # scores of these detectors lie in [0, 1]
+      ALPHA_NORMAL: "0.05"
+      ALPHA_ATTACK: "0.1"
+      AUDIT_RATE: "0.3"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
-  review-queue:                            # review queue + simulated reviewer (services/review-queue)
+  b1-scorer:
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.scorer"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      B1_INPUT_TOPICS: tool-calls.B
+      B1_MODELS_DIR: /models
+      B1_MODEL_KIND: random_forest
+    volumes:
+      - b1-models:/models
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  b1-train:
+    build: ./services/batch-processing/b1-binary-classifier
+    command: ["python", "-m", "b1_classifier.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--model", "random_forest", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  b3-train-a:
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.main", "--agent", "A",
+              "--dataset-file", "/dataset-a/all-events.jsonl",
+              "--exclude-labels", "model_failure",
+              "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+    volumes:
+      - b3-models:/models
+      - ./dataset/agent_a:/dataset-a:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  b3-train:
+    build: ./services/batch-processing/b3-markov-chain
+    command: ["python", "-m", "b3_markov.main",
+              "--source", "dataset", "--dataset-dir", "/dataset", "--scenarios", "scenario_01_500.jsonl",
+              "--smoothing", "additive", "--orders", "1", "2", "--models-dir", "/models", "--announce"]
+    profiles: ["batch"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b3-models:/models
+      - ./dataset/agent_b:/dataset:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    restart: "no"
+
+  b4-retrain:
+    build: ./services/batch-processing/b1-binary-classifier
+    profiles: ["batch"]
+    entrypoint: ["python", "/b4/promote_b1.py", "--source", "db",
+                 "--current-champion", "--dataset-dir", "/dataset", "--models-dir", "/models",
+                 "--promote", "--announce"]
+    command: ["--holdout-scenarios", "b4-holdout.jsonl"]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      ANALYTICS_DB: "host=postgres dbname=analytics_db user=analytics_svc password=${SERVICE_DB_PASSWORD:?set it in .env}"
+    volumes:
+      - b1-models:/models
+      - ./dataset/agent_b:/dataset:ro
+      - ./services/batch-processing/b4-retraining-and-model-registry:/b4:ro
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  review-queue:
     build: ./services/review-queue
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       REVIEW_DELAY_SECONDS: "10"
-      REVIEWER_ERROR_RATE: "0"             # share of sessions the simulated reviewer gets wrong
+      REVIEWER_ERROR_RATE: "0"
       DB_HOST: postgres
-      DB_NAME: scenario_db                 # reads the scenario ground truth
+      DB_NAME: scenario_db
       DB_USER: scenario_svc
       DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
     depends_on:
@@ -168,12 +344,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  storage-sink:                            # copies all Kafka events into analytics_db (services/storage-sink)
+  storage-sink:
     build: ./services/storage-sink
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
       DB_HOST: postgres
-      DB_NAME: analytics_db                # Grafana reads this database (read-only)
+      DB_NAME: analytics_db
       DB_USER: analytics_svc
       DB_PASSWORD: ${SERVICE_DB_PASSWORD:?set it in .env}
     depends_on:
@@ -183,16 +359,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Temporary stand-ins (services/mocks) until the real agents and detectors publish to Kafka.
-  # Started only with:  docker compose --profile mocks up -d
+  # Temporary stand-ins until the real agents and detectors publish to Kafka.
   mock-agents:
     build: ./services/mocks
     command: ["python", "-m", "atgm_mocks.run_agents"]
     profiles: ["mocks"]
     environment:
       KAFKA_BOOTSTRAP: kafka:9092
+      MOCK_AGENTS: "A,B"
       SESSIONS_PER_SECOND: "5"
-      WARMUP_SESSIONS: "1000"              # normal-only sessions per agent before attacks start
+      WARMUP_SESSIONS: "1000"
       ATTACK_RATE: "0.05"
       DB_HOST: postgres
       DB_NAME: scenario_db
@@ -228,12 +404,15 @@ services:
   # Services in other repositories (e.g. datalens-agent) join the "atgm" network instead.
 
 volumes:
+  agent-a-adapter-state:
+  online-bls-state:
+  optwin-state:
   kafka-data:
   pg-data:
   grafana-data:
+  b1-models:
+  b3-models:
 
-# Named network "atgm": services from other repositories (e.g. datalens-agent) join it
-# to reach kafka:9092 by name. See README, "Connecting a service from another repository".
 networks:
   default:
     name: atgm

@@ -1,4 +1,4 @@
-# Batch processing (placeholders)
+# Batch processing: B1–B4
 
 Batch jobs train models on the **stored** data instead of the live stream. They run on a schedule or by hand (e.g. `docker compose run --rm <job>`), read PostgreSQL, and write a trained model plus its metrics.
 

@@ -6,7 +6,8 @@ database commit, so nothing is lost on a crash and duplicates are ignored.
 
 Environment (defaults in brackets):
     KAFKA_BOOTSTRAP [localhost:29092]  GROUP_ID [storage-sink]
-    TOPICS [tool-calls.A,tool-calls.B,agent.events.v1,scores,alerts,labels,flags,drift,stats,toolset-config]
+    TOPICS [tool-calls.A,tool-calls.B,scores,alerts,labels,flags,drift,stats,toolset-config,
+            classifier-errors,model-updates,review-queue]
     BATCH_SIZE [500]  BATCH_SECONDS [1]
     DB_HOST / DB_PORT / DB_NAME [analytics_db] / DB_USER [analytics_svc] / DB_PASSWORD
 """
@@ -21,7 +22,8 @@ from collections import Counter
 from storage_sink.domain.rows import Row, to_row
 
 log = logging.getLogger("storage-sink")
-DEFAULT_TOPICS = "tool-calls.A,tool-calls.B,agent.events.v1,scores,alerts,labels,flags,drift,stats,toolset-config"
+DEFAULT_TOPICS = ("tool-calls.A,tool-calls.B,scores,alerts,labels,flags,drift,stats,toolset-config,"
+                  "classifier-errors,model-updates,review-queue")
 
 
 def decode(topic: str, raw: bytes) -> Row | None:
@@ -44,7 +46,7 @@ def main() -> None:
                             password=env("DB_PASSWORD", ""))
     consumer = Consumer({"bootstrap.servers": env("KAFKA_BOOTSTRAP", "localhost:29092"),
                          "group.id": env("GROUP_ID", "storage-sink"), "auto.offset.reset": "earliest",
-                         "enable.auto.commit": False})
+                         "enable.auto.commit": False, "isolation.level": "read_committed"})
     topics = env("TOPICS", DEFAULT_TOPICS).split(",")
     consumer.subscribe(topics)
     batch_size, batch_seconds = int(env("BATCH_SIZE", "500")), float(env("BATCH_SECONDS", "1"))

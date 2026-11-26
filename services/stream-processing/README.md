@@ -4,14 +4,14 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 
 | # | Folder | Algorithm | Owner | Publishes | Status |
 |---|---|---|---|---|---|
-| S01 | `s01-online-bls/` | Online-BLS classifier | Maxim | score → `scores` | to do |
-| S02 | `s02-optwin/` | OPTWIN drift on classifier errors | Maxim | drift → `drift` | to do |
-| S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | to do |
+| S01 | [`s01-online-bls/`](s01-online-bls/README.md) | Online-BLS classifier | Maxim | score → `scores` | ✅ |
+| S02 | [`s02-optwin/`](s02-optwin/README.md) | OPTWIN drift on classifier errors | Maxim | drift → `drift` | ✅ |
+| S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | ✅ |
 | S04 | `s04-online-forest/` | Online Isolation Forest | Fanni | score → `scores` | ✅ |
 | S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | ✅ |
 | S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | ✅ |
-| S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | to do |
-| S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | to do |
+| S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | ✅ |
+| S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | ✅ |
 | S09 | `s09-dspot/` | DSPOT alarm thresholds | Áron | alarm → `alerts` | ✅ |
 | S10 | `s10-aci/` | ACI conformal triage | Áron | decision → `flags`, `review-queue` | ✅ |
 
@@ -20,10 +20,25 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 Tool calls arrive on `tool-calls.A` and `tool-calls.B` (key = session id, so a session's calls stay in order). Until the real agents publish, start the mock agents: `docker compose --profile mocks up -d`. Each message uses the shared envelope:
 
 ```json
-{"schema_version": "1.0", "event_id": "…", "event_type": "tool_call.completed",
- "occurred_at": "…", "run_id": "…", "session_id": "…", "sequence": 3, "request_id": null,
- "data": {"agent_id": "B", "tool_name": "tone_checker", "arguments": {…}, "duration_ms": 27,
-          "success": true, "session_call_index": 2, "time_since_previous_call_ms": 1180}}
+{
+  "schema_version": "1.0",
+  "event_id": "…",
+  "event_type": "tool_call.completed",
+  "occurred_at": "…",
+  "run_id": "…",
+  "session_id": "…",
+  "sequence": 3,
+  "request_id": null,
+  "data": {
+    "agent_id": "B",
+    "tool_name": "tone_checker",
+    "arguments": {…},
+    "duration_ms": 27,
+    "success": true,
+    "session_call_index": 2,
+    "time_since_previous_call_ms": 1180,
+  },
+}
 ```
 
 Other event types on these topics: `session.started`, `tool_call.failed`, `session.ended` (`data.call_count`).

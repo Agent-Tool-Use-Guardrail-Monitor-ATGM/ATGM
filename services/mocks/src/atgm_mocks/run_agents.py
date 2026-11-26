@@ -7,7 +7,7 @@ then a fraction ATTACK_RATE of the sessions are attacks.
 Environment (defaults in brackets):
     KAFKA_BOOTSTRAP [localhost:29092]   TOPIC_A [tool-calls.A]   TOPIC_B [tool-calls.B]
     SESSIONS_PER_SECOND [5]   WARMUP_SESSIONS [1000]   ATTACK_RATE [0.05]   MAX_SESSIONS [0 = forever]
-    SEED [random]   GROUND_TRUTH [on]   DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD (scenario_db)
+    MOCK_AGENTS [A,B] (use B when the real Agent A publishes)   SEED [random]   GROUND_TRUTH [on]   DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD (scenario_db)
 """
 from __future__ import annotations
 
@@ -33,6 +33,9 @@ def main() -> None:
     rng = random.Random(int(seed) if seed else None)
     generator = SessionGenerator(rng, attack_rate=float(env("ATTACK_RATE", "0.05")))
     topics = {"A": env("TOPIC_A", "tool-calls.A"), "B": env("TOPIC_B", "tool-calls.B")}
+    agents = [a.strip() for a in env("MOCK_AGENTS", "A,B").split(",") if a.strip() in topics]
+    if not agents:
+        raise SystemExit("MOCK_AGENTS must name A and/or B")
     rate = float(env("SESSIONS_PER_SECOND", "5"))
     warmup = int(env("WARMUP_SESSIONS", "1000"))
     limit = int(env("MAX_SESSIONS", "0"))
@@ -45,10 +48,11 @@ def main() -> None:
     run_id = str(uuid.uuid4())
     counts = {"A": 0, "B": 0}
     attacks = 0
-    log.info("mock agents started: run %s, %s sessions/s, warm-up %d sessions per agent", run_id, rate, warmup)
+    log.info("mock agents %s started: run %s, %s sessions/s, warm-up %d sessions per agent",
+             ",".join(agents), run_id, rate, warmup)
     try:
         while not limit or sum(counts.values()) < limit:
-            agent = "A" if counts["A"] <= counts["B"] else "B"
+            agent = min(agents, key=counts.get)                 # alternate between the simulated agents
             session = generator.next(agent, allow_attacks=counts[agent] >= warmup)
             if store is not None:
                 store.save(session)

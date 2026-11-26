@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: ATGM dashboards
+    type: file
+    allowUiUpdates: true                     # edit in the UI, then export the JSON back into the repo
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards          # = services/visualization/dashboards
+      foldersFromFilesStructure: true        # stream/ and batch/ become Grafana folders

@@ -2,13 +2,15 @@
 # Add a line, then run: docker compose up kafka-init
 #
 # topic              partitions  cleanup   written by
-tool-calls.A         3           delete    agent-a (key = session_id)
+tool-calls.A         3           delete    agent-a-adapter or mock Agent A (key = session_id)
 tool-calls.B         3           delete    agent-b (key = session_id)
+agent.events.v1      3           delete    DataLens (Agent A) telemetry, transactional (key = session_id); agent-a-adapter -> tool-calls.A
 toolset-config       1           compact   scenario-generator (key = agent_id; keeps latest per agent)
 scores               3           delete    detectors: anomaly.scored (key = agent_id)
 flags                3           delete    stream stages
 alerts               1           delete    stream stages
 drift                1           delete    drift detectors: drift.detected (S02, S06)
+classifier-errors    1           delete    S01 reviewed prediction errors for S02
 stats                1           delete    counting stages: counts.summary (S03, S05)
 review-queue         1           delete    stream stages
 labels               1           delete    review

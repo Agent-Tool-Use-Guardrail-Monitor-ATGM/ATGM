@@ -1,0 +1,117 @@
+{
+  "uid": "atgm-s09-dspot",
+  "title": "S09 DSPOT alarm thresholds",
+  "tags": [
+    "atgm",
+    "stream"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**DSPOT** turns each detector's scores into alarms with false-alarm probability `q`. Threshold = the alarm line at alarm time; it moves with drift. Warm-up: the first 500 scores per (agent, detector) raise no alarms."
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Alarms per minute (by agent / detector)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), agent_id || ' / ' || detector AS metric, count(*) AS value\nFROM alarms WHERE $__timeFilter(occurred_at)\nGROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Alarm threshold over time (by agent / detector)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT occurred_at AS time, agent_id || ' / ' || detector AS metric, threshold AS value\nFROM alarms WHERE $__timeFilter(occurred_at) ORDER BY 1"
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "table",
+      "title": "Alarm rate vs q (per agent / detector, selected time range)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT s.agent_id || ' / ' || s.detector AS stream, count(*) AS scores, count(a.event_id) AS alarms,\n       round(100.0 * count(a.event_id) / count(*), 3) AS \"alarm %\", max(a.q) * 100 AS \"q %\"\nFROM scores s LEFT JOIN alarms a ON a.scored_event_id = s.scored_event_id AND a.detector = s.detector\nWHERE $__timeFilter(s.occurred_at) GROUP BY 1 ORDER BY 1"
+        }
+      ],
+      "id": 4
+    }
+  ]
+}

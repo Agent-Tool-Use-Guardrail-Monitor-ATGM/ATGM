@@ -1,0 +1,21 @@
+name: S09 DSPOT
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/stream-processing/s09-dspot/**", ".github/workflows/s09-dspot.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/stream-processing/s09-dspot/**", ".github/workflows/s09-dspot.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/stream-processing/s09-dspot
+      image: atgm-dspot

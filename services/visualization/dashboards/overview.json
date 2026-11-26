@@ -1,0 +1,144 @@
+{
+  "uid": "atgm-overview",
+  "title": "ATGM overview",
+  "tags": [
+    "atgm"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**Whole pipeline at a glance.** Tool calls per agent, scores per detector, DSPOT alarms and ACI decisions. Data: `analytics_db` (written by the storage sink). Algorithm dashboards are in the *stream* and *batch* folders."
+      },
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool-call events per minute (by agent)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), agent_id AS metric, count(*) AS value\nFROM agent_events WHERE $__timeFilter(occurred_at) AND tool_name IS NOT NULL\nGROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Scores per minute (by detector)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), detector AS metric, count(*) AS value\nFROM scores WHERE $__timeFilter(occurred_at)\nGROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "DSPOT alarms per minute (by detector)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), agent_id || ' / ' || detector AS metric, count(*) AS value\nFROM alarms WHERE $__timeFilter(occurred_at)\nGROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "ACI decisions per minute",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 11,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at, '1m'), data->>'decision' AS metric, count(*) AS value\nFROM other_events WHERE $__timeFilter(occurred_at) AND event_type = 'decision.made'\nGROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "id": 5
+    }
+  ]
+}

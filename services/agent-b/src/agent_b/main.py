@@ -2,59 +2,147 @@
 from __future__ import annotations
 
 import argparse
+import os
+import uuid
+import json
+from pathlib import Path
+from datetime import date
+from confluent_kafka import Producer
 
-from agent_b.domain.agent import create_agent_b
-from agent_b.adapters.tool_call_logger import log_tool_trace, TOOL_LOGS_DIR
+from agent_b.adapters.session_event_processor import SessionEventPublisher, KafkaSink, JsonlSink
+from agent_b.domain.agent import create_agent_b, TOOLS
 
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+
+def scenario_date(scenario: dict) -> date | None:
+    window = scenario.get("policy", {}).get("date_window")
+    return date.fromisoformat(window[0]) if window else None
+def keep_finished_sessions(events_path: Path) -> set[str]:
+    """Keeps only the sessions that ended; returns their scenario ids."""
+    if not events_path.is_file():
+        return set()
+    events = [json.loads(line) for line in open(events_path, encoding="utf-8") if line.strip()]
+    finished = {e["session_id"] for e in events if e["event_type"] == "session.ended"}
+    with open(events_path, "w", encoding="utf-8") as f:
+        for event in events:
+            if event["session_id"] in finished:
+                f.write(json.dumps(event, default=str, ensure_ascii=False) + "\n")
+    return finished
 def main() -> None:
     parser = argparse.ArgumentParser(description="Email drafting assistant agent")
     parser.add_argument("--model", default="qwen3:1.7b", help="Installed Ollama model") # qwen2.5:1.5b, qwen3:1.7b
-    parser.add_argument("--prompt", help="One question; otherwise interactive mode")
+    parser.add_argument("--prompt", default="interactive", help="'interactive' or name of a scenario file, e.g. 'scenario_01.jsonl'")
+    parser.add_argument("--resume", action="store_true", help="continue an interrupted scenario run")
     args = parser.parse_args()
 
     print(f"Model: {args.model}")
 
     agent = create_agent_b(args.model)
-    
-    TOOL_LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    session_id = 0
-    
+
     print("\nThe email drafting assistant agent has started.")
 
-    def user_prompt(session_id: int, prompt: str) -> None:
+    env = os.environ.get
+    producer = Producer({"bootstrap.servers": env("KAFKA_BOOTSTRAP", "localhost:29092")})
+    topic = env("TOPIC_B", "tool-calls.B")
+    run_id = str(uuid.uuid4())
+
+    def user_prompt(prompt: str) -> None:
+        kafka_sink = KafkaSink(producer, topic)
+        
+        publisher = SessionEventPublisher(
+            kafka_sink, run_id=run_id, session_id=str(uuid.uuid4()), agent_id="B"
+        )
+        publisher.start()
         try:
             result = agent.invoke(
                 {"messages": [{"role": "user", "content": prompt}]},
-                config={"recursion_limit": 14},
+                config={"recursion_limit": 14, "callbacks": [publisher]},
             )
         except Exception as exc:
             print(f"Agent error: {type(exc).__name__}: {exc}")
             print("Check that Ollama is running and the requested model is installed.")
             return
-        
-        log_tool_trace(session_id, result["messages"])
-        
-        print(f"\nAgent's answer > {result["messages"][-1].content}")    
+        finally:
+            publisher.end()
 
-    if args.prompt:
-        user_prompt(session_id, args.prompt)
-    else:
-        print("\nDescribe what email you'd like the agent to draft, or 'quit' to exit.")
-        while True:
+        print(f"\nAgent's answer > {result['messages'][-1].content}")
+        
+    def scenario_prompt(scenario: dict, sink: JsonlSink) -> None:
+        publisher = SessionEventPublisher(
+            sink, run_id=run_id, session_id=scenario["scenario_id"], agent_id="B",
+            session_info={
+                "scenario_id": scenario["scenario_id"],
+                "category": scenario.get("category"),
+                "attack_type": scenario.get("attack_type"),},
+            tool_args={tool.name: set(tool.args) for tool in TOOLS},)
+        
+        scenario_agent = create_agent_b(args.model, today=scenario_date(scenario))
+        publisher.start()
+        try:
+            result = scenario_agent.invoke(
+                {"messages": [{"role": "user", "content": scenario["prompt"]}]},
+                config={"recursion_limit": 14, "callbacks": [publisher]},
+            )
+            print(f"Agent's answer > {result['messages'][-1].content}")
+        except Exception as exc:
+            print(f"Agent error: {type(exc).__name__}: {exc}")
+            print("Check that Ollama is running and the requested model is installed.")
+        finally:
+            publisher.end()
+
+    try:
+        if args.prompt == 'interactive':
+            print("\nDescribe what email you'd like the agent to draft, or 'quit' to exit.")
+            while True:
+                try:
+                    q = input("\nUser prompt > ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print("\nThe email drafting assistant agent has stopped.")
+                    break
+                if q.lower() in {"quit", "exit", "q"}:
+                    print("\nThe email drafting assistant agent has stopped.")
+                    break
+                if q:
+                    user_prompt(q)
+        
+        else:
+            scenario_path = Path(PROJECT_ROOT / "dataset" / "agent_b" / "scenarios") / args.prompt
+            if not scenario_path.is_file():
+                print(f"Scenario file not found: {scenario_path}")
+                return
+
+            prompts = []
+            with open(scenario_path, encoding="utf-8") as f:
+                for line_no, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        scenario = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        print(f"Skipping line {line_no}: {exc}")
+                        continue
+                    if "scenario_id" not in scenario or "prompt" not in scenario:
+                        print(f"Skipping line {line_no}: no scenario_id or prompt")
+                        continue
+                    prompts.append(scenario)
+            event_file_name = "events_for_" + args.prompt
+            events_path = Path(PROJECT_ROOT / "dataset" / "agent_b" / "events") / event_file_name
+            done = keep_finished_sessions(events_path) if args.resume else set()
+            prompts = [s for s in prompts if s["scenario_id"] not in done]
+            print(f"{len(done)} scenarios already done, {len(prompts)} to run")
+            sink = JsonlSink(events_path, append=args.resume)
             try:
-                q = input("\nUser prompt > ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\nThe email drafting assistant agent has stopped.")
-                break
-            if q.lower() in {"quit", "exit", "q"}:
-                print("\nThe email drafting assistant agent has stopped.")
-                break
-            if q:
-                user_prompt(session_id, q)
-                session_id += 1
+                for i, scenario in enumerate(prompts, 1):
+                    scenario_prompt(scenario, sink)
+                    print(f"\nProcessed [{i}/{len(prompts)}] prompts")
+            finally:
+                sink.close()
+            print(f"\nEvents saved to {events_path}")
+    
+    finally:
+        producer.flush(10)
 
 
 if __name__ == "__main__":
     main()
-    

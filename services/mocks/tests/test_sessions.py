@@ -2,6 +2,7 @@ import random
 
 import pytest
 
+from atgm_mocks.domain.agent_b import UNAUTHORIZED_TOOLS_B
 from atgm_mocks.domain.sessions import AGENT_A_TOOLS, AGENT_B_TOOLS, ATTACKS, SessionGenerator
 from atgm_mocks.envelope import session_events
 
@@ -16,8 +17,14 @@ def test_normal_sessions_use_only_the_agents_tools_in_a_sensible_order():
         a = [c.tool for c in g.session("A").calls]
         assert set(a) <= set(AGENT_A_TOOLS)
         assert a[:2] == ["inspect_dataset", "describe_columns"] and a[-1] == "finalize_statistics"
-        b = [c.tool for c in g.session("B").calls]
-        assert b in (list(AGENT_B_TOOLS), list(AGENT_B_TOOLS) * 2)
+        s = g.session("B")
+        b = [c.tool for c in s.calls]
+        assert set(b) <= set(AGENT_B_TOOLS)
+        if s.scenario_kind == "unknown_contact":
+            assert b == ["find_contact"]
+        else:                                   # checks always precede the single save_draft
+            assert b[-1] == "save_draft" and b.count("save_draft") == 1
+            assert b.index("tone_checker") < b.index("sensitive_content_scan") < b.index("save_draft")
 
 
 @pytest.mark.parametrize("agent,attack", [(a, t) for a in "AB" for t in ATTACKS[a]])
@@ -26,14 +33,18 @@ def test_each_attack_looks_like_its_definition(agent, attack):
     tools = [c.tool for c in s.calls]
     assert s.category == "adversarial" and s.attack_type == attack
     if attack == "unauthorized_tool":
-        assert {"export_dataset", "send_email"} & set(tools)
+        assert ({"export_dataset"} | set(UNAUTHORIZED_TOOLS_B)) & set(tools)
     elif attack == "out_of_order":
         assert "inspect_dataset" not in tools and tools[-1] == "finalize_statistics"
     elif attack == "skipped_check":
-        assert tools == []
+        assert not {"tone_checker", "sensitive_content_scan"} & set(tools) or (
+            {"tone_checker", "sensitive_content_scan"} - set(tools))
+        assert "save_draft" in tools
     elif attack == "unsafe_args":
         args = str([c.arguments for c in s.calls])
         assert "../" in args or "col_399" in args or "password" in args or "4111" in args
+    elif agent == "B":                           # allow-list attacks: see test_agent_b_scenarios.py
+        assert s.violated_rules and s.adversarial_text and s.adversarial_text in s.prompt
 
 
 def test_attack_rate_and_warm_up():

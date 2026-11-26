@@ -1,0 +1,21 @@
+name: S10 ACI
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/stream-processing/s10-aci/**", ".github/workflows/s10-aci.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/stream-processing/s10-aci/**", ".github/workflows/s10-aci.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/stream-processing/s10-aci
+      image: atgm-aci

@@ -161,7 +161,7 @@ Messages use Agent A's event envelope (`schema_version "1.0"`, body in `data`). 
 The `anomaly.scored` format is a proposal to the detector owners; only `adapters/events.py` changes if it does.
 
 Behaviour:
-- **Warm-up:** the first `DSPOT_WARMUP` scores of each stream (default 3000) calibrate it and raise no alarms. They must be normal: start each experiment with normal scenarios only.
+- **Warm-up:** the first `DSPOT_WARMUP` scores of each stream (default 500) calibrate it and raise no alarms. Fewer warm-up scores mean a rougher first threshold, but DSPOT keeps learning afterwards: on the synthetic stream, 500 and 3000 both catch all attacks with a ~0.24% false-alarm rate (0.13% with review feedback). They must be normal: start each experiment with normal scenarios only.
 - **Who reviews what:** DSPOT does **not** send its alarms to the review queue. ACI decides which sessions a human sees (at most one item per session, with a bounded review share), so an attacker cannot flood the reviewers with alarms.
 - **Learning from verdicts, per session:** alarms are remembered per session. If the reviewer judges a session **normal**, every call in it was normal, so all of that session's alarms are learned. If it was an **attack**, we don't know which call was bad, so nothing is learned. Errors can therefore only make DSPOT more cautious, never less. Alarms of sessions that are never reviewed are simply not learned.
 - **Late verdicts:** an alarm remembers the moving average at alarm time, so a verdict that arrives later is learned correctly. Unanswered alarms of the last 10,000 sessions are remembered.

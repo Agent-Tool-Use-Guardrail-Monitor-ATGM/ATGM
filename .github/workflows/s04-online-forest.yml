@@ -1,0 +1,24 @@
+name: S04 Online Isolation Forest
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/stream-processing/s04-online-forest/**", ".github/workflows/s04-online-forest.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/stream-processing/s04-online-forest/**", ".github/workflows/s04-online-forest.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/stream-processing/s04-online-forest
+      image: atgm-online-forest
+      python-version: "3.11"
+      java: true
+      install: pip install -r requirements.txt && pip install -e .

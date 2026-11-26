@@ -1,0 +1,19 @@
+#cloud-config
+# First boot of the ATGM VM (Ubuntu 24.04): install Docker, clone the repo, create .env with
+# random passwords (they never leave the VM), and start the stack with the mock agents.
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - git
+  - openssl
+runcmd:
+  - systemctl enable --now docker
+  - usermod -aG docker azureuser
+  - git clone --branch development https://github.com/Agent-Tool-Use-Guardrail-Monitor-ATGM/ATGM.git /opt/atgm
+  - cp /opt/atgm/.env.example /opt/atgm/.env
+  - for v in POSTGRES_PASSWORD SERVICE_DB_PASSWORD GRAFANA_DB_PASSWORD GRAFANA_ADMIN_PASSWORD; do sed -i "s/^$v=.*/$v=$(openssl rand -hex 16)/" /opt/atgm/.env; done
+  - chmod 600 /opt/atgm/.env
+  - chown -R azureuser:azureuser /opt/atgm
+  - cd /opt/atgm && docker compose --profile mocks up -d --build
+  - touch /opt/atgm/.cloud-init-done
