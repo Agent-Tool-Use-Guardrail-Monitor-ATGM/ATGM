@@ -4,12 +4,12 @@ Every team member builds **two stream stages**. Each stage is its own folder and
 
 | # | Folder | Algorithm | Owner | Publishes | Status |
 |---|---|---|---|---|---|
-| S01 | [`s01-online-bls/`](s01-online-bls/README.md) | Online-BLS classifier | Maxim | score → `scores` | implemented |
-| S02 | [`s02-optwin/`](s02-optwin/README.md) | OPTWIN drift on classifier errors | Maxim | drift → `drift` | implemented |
-| S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | to do |
+| S01 | [`s01-online-bls/`](s01-online-bls/README.md) | Online-BLS classifier | Maxim | score → `scores` | ✅ |
+| S02 | [`s02-optwin/`](s02-optwin/README.md) | OPTWIN drift on classifier errors | Maxim | drift → `drift` | ✅ |
+| S03 | `s03-sliding-top-k/` | sliding-window top-k violation counts | Fanni | counts → `stats`, `scores` | ✅ |
 | S04 | `s04-online-forest/` | Online Isolation Forest | Fanni | score → `scores` | ✅ |
-| S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | to do |
-| S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | to do |
+| S05 | `s05-spacesaving/` | SpaceSaving± frequent items | Asmar | counts → `stats` | ✅ |
+| S06 | `s06-kswin/` | KSWIN change detection | Asmar | drift → `drift` | ✅ |
 | S07 | `s07-allow-list-check/` | allow-list policy check | Agnes | violation → `flags` | ✅ |
 | S08 | `s08-markov-order-check/` | Markov order check (or drift vs. attack) | Agnes | score → `scores` | ✅ |
 | S09 | `s09-dspot/` | DSPOT alarm thresholds | Áron | alarm → `alerts` | ✅ |
