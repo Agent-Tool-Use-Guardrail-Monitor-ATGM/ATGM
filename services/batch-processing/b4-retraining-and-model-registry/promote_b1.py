@@ -3,6 +3,8 @@
 import argparse
 import json
 import os
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from b1_classifier.adapters import dataset, model_store
@@ -85,7 +87,33 @@ def main():
         report["saved_to"] = str(folder)
         if args.announce:
             announce_if_pending(args.models_dir, folder)
+    if args.announce:
+        announce_evaluation(report, os.getenv("KAFKA_BOOTSTRAP", "localhost:29092"))
     print(json.dumps(report, indent=2))
+
+
+def announce_evaluation(report, bootstrap):
+    """Record each completed comparison on the analytics topic."""
+    from confluent_kafka import Producer
+
+    event = {
+        "schema_version": "1.0",
+        "event_id": str(uuid.uuid4()),
+        "event_type": "model.evaluated",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "run_id": None,
+        "session_id": None,
+        "sequence": None,
+        "request_id": None,
+        "data": {"agent_id": "B", "model": "b1-binary", "detector": "b4",
+                 "metrics": report},
+    }
+    producer = Producer({"bootstrap.servers": bootstrap, "enable.idempotence": True})
+    delivery = []
+    producer.produce("stats", key="b1-binary", value=json.dumps(event),
+                     on_delivery=lambda error, _: delivery.append(error))
+    if producer.flush(10) or delivery != [None]:
+        raise RuntimeError("Kafka did not acknowledge the B4 evaluation")
 
 
 def announce_if_pending(models_dir, folder):

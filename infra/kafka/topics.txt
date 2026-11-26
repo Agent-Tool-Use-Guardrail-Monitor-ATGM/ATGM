@@ -11,7 +11,7 @@ flags                3           delete    stream stages
 alerts               1           delete    stream stages
 drift                1           delete    drift detectors: drift.detected (S02, S06)
 classifier-errors    1           delete    S01 reviewed prediction errors for S02
-stats                1           delete    counting stages: counts.summary (S03, S05)
+stats                1           delete    counts.summary (S03, S05); model.evaluated (B4)
 review-queue         1           delete    stream stages
 labels               1           delete    review
 model-updates        1           compact   batch training (key = model name)
