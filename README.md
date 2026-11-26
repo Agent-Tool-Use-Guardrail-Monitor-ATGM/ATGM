@@ -1,6 +1,6 @@
 # ATGM: Agent Tool-Use Guardrail Monitor
 
-Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [docs/architecture_and_team_work_plan.md](docs/architecture_and_team_work_plan.md).
+Two LLM agents send every tool call to Kafka. Stream processing services check the calls live, results are stored in PostgreSQL, and Grafana shows them. The design is in [docs/architecture_and_team_work_plan.md](docs/architecture_and_team_work_plan.md). How the data flows through Kafka and where it is stored: [docs/data-flow-and-storage.md](docs/data-flow-and-storage.md).
 
 ## Run the platform
 
