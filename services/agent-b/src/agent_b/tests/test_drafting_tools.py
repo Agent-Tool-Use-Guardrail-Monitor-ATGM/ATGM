@@ -1,5 +1,3 @@
-from agent_b.domain.drafting_tools import *
-
 import re
 from datetime import datetime
 
@@ -13,38 +11,38 @@ from agent_b.domain.drafting_tools import (
     save_draft,
 )
 
-@pytest.fixture
-def fake_contacts(monkeypatch):
-    fake = {
-        "alice": {
-            "name": "Alice",
-            "email": "alice@example.com",
-            "role": "CTO",
-            "tone": "formal",
-        }
-    }
-    monkeypatch.setattr(drafting_tools, "CONTACTS", fake)
+
+class FakeStore:
+    """In-memory stand-in for agent_b_db, so the tests need no database."""
+
+    def __init__(self):
+        self.contacts = {"alice": {"name": "Alice", "email": "alice@example.com",
+                                   "role": "CTO", "tone": "formal"}}
+        self.drafts = []
+
+    def contact(self, key):
+        return self.contacts.get(key)
+
+    def contact_keys(self):
+        return sorted(self.contacts)
+
+    def slots(self, weekday):
+        return ["09:30-10:30", "14:00-15:00"] if weekday % 2 == 0 else ["11:00-12:00", "16:00-17:00"]
+
+    def save_draft(self, to, subject, body):
+        self.drafts.append((to, subject, body))
+        return len(self.drafts)
+
+
+@pytest.fixture(autouse=True)
+def fake_store(monkeypatch):
+    fake = FakeStore()
+    monkeypatch.setattr(drafting_tools, "STORE", fake)
     return fake
 
 
-@pytest.fixture
-def drafts_dir(monkeypatch, tmp_path):
-    path = tmp_path / "email_drafts"
-    monkeypatch.setattr(drafting_tools, "DRAFTS_DIR", path)
-    return path
-
 # ---------- find_contact ----------
-def test_find_contact(monkeypatch):
-    fake = {
-        "alice": {
-            "name": "Alice",
-            "email": "alice@example.com",
-            "role": "CTO",
-            "tone": "formal",
-        }
-    }
-    monkeypatch.setattr(drafting_tools, "CONTACTS", fake)
-
+def test_find_contact():
     # Found (case and whitespace insensitive)
     result = find_contact.invoke({"name": "  ALICE "})
     assert result == "Alice <alice@example.com>, role: CTO, preferred tone: formal"
@@ -82,17 +80,9 @@ def test_get_free_slots():
 
 
 # ---------- save_draft ----------
-def test_save_draft(monkeypatch, tmp_path):
-    drafts_dir = tmp_path / "email_drafts"
-    monkeypatch.setattr(drafting_tools, "DRAFTS_DIR", drafts_dir)
-
+def test_save_draft(fake_store):
     result = save_draft.invoke(
         {"to": "alice@example.com", "subject": "Hello", "body": "Hi Alice,\nSee you soon."}
     )
-
-    files = list(drafts_dir.glob("draft_*.txt"))
-    assert len(files) == 1
-    assert result == f"Draft saved to {files[0]}"
-    assert files[0].read_text(encoding="utf-8") == (
-        "To: alice@example.com\nSubject: Hello\n\nHi Alice,\nSee you soon.\n"
-    )
+    assert result == "Draft saved with id 1"
+    assert fake_store.drafts == [("alice@example.com", "Hello", "Hi Alice,\nSee you soon.")]
