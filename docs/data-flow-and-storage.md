@@ -41,7 +41,7 @@ Every message is one JSON object in the shared envelope:
 | `stats` | `counts.summary` | S03, S05 | sink |
 | `classifier-errors` | `classifier.error` | S01 | S02, sink |
 | `review-queue` | `decision.made` (review or audit) | S10 ACI | review queue, sink |
-| `labels` | `review.labelled` | review queue (simulated reviewer) | S01, S05, S09, S10, sink |
+| `labels` | `review.labelled` | review queue (simulated reviewer), review UI (humans) | S01, S05, S09, S10, sink |
 | `toolset-config` | current allowed tools per agent | scenario generator / S07 tool | S07, sink |
 | `model-updates` | `model.trained` | B1, B2, B3, B4 | B1 scorer, S08, sink |
 

@@ -22,7 +22,7 @@ DSPOT's alarms do **not** go to review directly (only to `alerts`): routing ever
 - Each item is answered after `REVIEW_DELAY_SECONDS` (default 10 s), like a human who needs some time.
 - A **session** is judged once. If a session caused several alarms, all of them get the same verdict.
 - `REVIEWER_ERROR_RATE` (default 0) makes the reviewer get a share of the sessions wrong, to test robustness to label noise.
-- If the ground truth is not there yet, the item is retried 5 times, then dropped.
+- If the ground truth is not there yet, the item is retried 5 times, then left to a human: sessions without ground truth (the real agents, the Agent A replay) are reviewed in the **review UI** (`services/review-ui`, http://localhost:8501).
 
 ## Messages
 

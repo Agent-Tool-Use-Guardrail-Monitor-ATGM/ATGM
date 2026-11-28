@@ -17,6 +17,7 @@ docker compose down -v      # stop and delete all data
 |---|---|
 | Kafka UI | http://localhost:8080 |
 | Grafana | http://localhost:3000 (user `admin`, password from `.env`) |
+| Review UI | http://localhost:8501 (label the sessions ACI sends to review) |
 | Kafka | `localhost:29092` from your PC, `kafka:9092` from containers |
 | PostgreSQL | `localhost:5432`; each service has its own database (see `infra/postgres/init.sh`) |
 
@@ -38,7 +39,7 @@ Start the ATGM platform first (`docker compose up -d` here), then the other repo
 All ports are published on `127.0.0.1` only, so Kafka, PostgreSQL, kafka-ui (which has no login) and Grafana are not reachable from the network. From your PC, open an SSH tunnel and use the usual `localhost` addresses while it is open:
 
 ```bash
-ssh -L 8080:localhost:8080 -L 3000:localhost:3000 -L 29092:localhost:29092 <user>@<server>
+ssh -L 8080:localhost:8080 -L 3000:localhost:3000 -L 8501:localhost:8501 -L 29092:localhost:29092 <user>@<server>
 ```
 
 All platform services restart automatically after a server reboot (`restart: unless-stopped`).
@@ -56,6 +57,7 @@ services/
   scenario-generator/       Áron
   mocks/                    temporary stand-ins for agents and detectors (Áron)
   review-queue/             review queue with a simulated reviewer (Áron)
+  review-ui/                web page for human reviewers: label the sessions ACI sends to review (Áron)
   storage-sink/             copies Kafka events into analytics_db for Grafana and batch jobs (Áron)
   stream-processing/        stream stages S01-S10, two per member (see its README)
   batch-processing/         batch jobs B1-B4: classifiers, Markov chain, retraining
