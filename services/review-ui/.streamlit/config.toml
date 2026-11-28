@@ -1,0 +1,11 @@
+[client]
+toolbarMode = "viewer"      # no "Deploy" button or developer menu
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#2F6DAE"
