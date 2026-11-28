@@ -70,6 +70,8 @@ For an hourly run on the Linux Compose host, add this to the deployment user's c
 
 If Kafka fails after saving a winner, the next scheduled run retries publication before training. Broker acknowledgement is recorded beside the model. A retry can send the same version again, which the scorer can reload.
 
+Each completed comparison with `--announce` also publishes a `model.evaluated` event to `stats`, including both macro-F1 scores, holdout size and promotion eligibility. The storage sink stores it in `other_events`. The B4 Grafana dashboard displays these comparisons, including rejected challengers.
+
 ## Remaining B4 work
 
 Retrain B1–B3 regularly on the newest **reviewed** labels and only promote a new model if it is better than the current one (champion/challenger).

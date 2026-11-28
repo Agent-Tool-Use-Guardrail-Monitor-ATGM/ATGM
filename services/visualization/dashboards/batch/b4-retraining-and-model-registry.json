@@ -7,27 +7,177 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
-    "from": "now-6h",
+    "from": "now-24h",
     "to": "now"
   },
   "panels": [
     {
-      "type": "text",
-      "title": "",
+      "id": 1,
+      "title": "Champion and challenger macro F1",
+      "description": "Champion and challenger macro F1 on the same independent holdout, including rejected challengers.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 24,
-        "h": 6
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
       },
       "options": {
-        "mode": "markdown",
-        "content": "**Placeholder for B4 Retraining and model registry** (owner: Maxim).\n\nAdd panels in Grafana (*Edit → Add visualization*, data source *ATGM (PostgreSQL)*), then *Share → Export → Save to file* and replace this file (`services/visualization/dashboards/batch/b4-retraining-and-model-registry.json`). Keep the `uid` `atgm-b4-retraining-and-model-registry`.\n\nTables: `agent_events`, `scores`, `alarms`, `labels`, `other_events` (see services/storage-sink/README.md)."
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       },
-      "id": 1
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "SELECT occurred_at AS time, (data->'metrics'->>'champion_macro_f1')::float AS champion, (data->'metrics'->>'challenger_macro_f1')::float AS challenger FROM other_events WHERE event_type = 'model.evaluated' AND data->>'detector' = 'b4' AND $__timeFilter(occurred_at) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Holdout sessions per evaluation",
+      "description": "Number of independent holdout sessions used for each completed comparison.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "SELECT occurred_at AS time, (data->'metrics'->>'held_out_sessions')::int AS sessions FROM other_events WHERE event_type = 'model.evaluated' AND data->>'detector' = 'b4' AND $__timeFilter(occurred_at) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Macro F1 change",
+      "description": "Challenger macro F1 minus champion macro F1. Negative values indicate deterioration.",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "atgm-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 9,
+        "w": 12,
+        "h": 9
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "showPoints": "always",
+            "spanNulls": false
+          },
+          "unit": "percentunit",
+          "min": -1,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "atgm-postgres"
+          },
+          "editorMode": "code",
+          "rawQuery": true,
+          "format": "time_series",
+          "rawSql": "SELECT occurred_at AS time, (data->'metrics'->>'challenger_macro_f1')::float - (data->'metrics'->>'champion_macro_f1')::float AS improvement FROM other_events WHERE event_type = 'model.evaluated' AND data->>'detector' = 'b4' AND $__timeFilter(occurred_at) ORDER BY 1"
+        }
+      ]
     }
   ]
 }
