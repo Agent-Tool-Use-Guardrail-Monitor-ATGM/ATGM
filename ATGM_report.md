@@ -8,7 +8,7 @@ We need this because LLM agents do not only answer questions, they also act thro
 Every tool call is streamed through Apache Kafka. Stream mining pipelines check the calls against policy rules, score them with online anomaly detectors, check the call order against a learned Markov model, count the most frequent violations, and separate legitimate drift from real attacks. In batch, we train a binary classifier for compliant and violating sessions, a classifier for the type of violation and a Markov chain of the normal call order. Suspicious sessions go to a review step and a scheduled retraining job retrains the binary classifier with the newly reviewed sessions from PostgreSQL, replacing the current model only if the new one is better. All events are stored in PostgreSQL and shown on Grafana dashboards, and the whole system runs in Docker containers.
 
 In our team of five, each member developed two stream mining pipelines, and four of us also built one batch component. Where possible, we implemented methods from recent research papers, which we cite in the section of each component. We generated our own datasets with normal and prompt-injected runs for both agents.
-
+Both agents also have their own guardrail that blocks some bad tool calls before they run, so the monitor watches what gets through.
 ## Data sets
 
 Agent B is an email-drafting assistant built with LangChain and a local `qwen3:1.7b` model, with six tools. We generated scenarios with their own policy (allowed tools, recipients, date window, call order, call limit), ran Agent B on them and labelled every tool call with nine policy rules. Many sessions planned as normal ended up violating, because the small model often invents recipients, so we kept the labels based on what the agent really did.
@@ -19,6 +19,8 @@ Agent B is an email-drafting assistant built with LangChain and a local `qwen3:1
 | Holdout (new scenarios) | 183 | 170 | 1,091 | 199 |
 
 ## System architecture
+
+**Agent B**: An email-drafting assistant built with LangChain and a local Ollama model, with six tools. Contacts, free slots and drafts are stored in its own PostgreSQL database (`agent_b_db`). Before `save_draft` runs, a deterministic guardrail blocks drafts to unknown recipients, subjects with line breaks and drafts with sensitive data, a blocked call is published as `tool_call.failed`. Every tool call is sent to Kafka (`tool-calls.B`).
 
 **Online Isolation Forest**: For every tool call, the forest builds features that every agent has (duration, arguments, call number, gap to the previous call, success), updates one model per agent (Leveni et al., 2024) and sends the anomaly score to DSPOT.
 
