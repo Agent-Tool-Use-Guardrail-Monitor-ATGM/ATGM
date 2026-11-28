@@ -33,10 +33,20 @@ Run the agent with:
 ### Run tests in local environment
 
 ```
-.../ATGM/services/agent-b/src/agent_b PYTHONPATH=src uv run pytest tests/ -v
+.../ATGM/services/agent-b$ uv run pytest
 ```
 
-Note: it might take a few minutes.
+The live test (a real prompt to the model) is skipped by default. To include it, start Ollama and set
+`AGENT_B_LIVE=1` (PowerShell: `$env:AGENT_B_LIVE = "1"`); it takes a few minutes and can fail on a bad
+model answer. CI runs the other tests on every PR (`.github/workflows/agent-b.yml`).
+
+### What the monitor receives
+
+One event per tool call on `tool-calls.B` (Kafka default `127.0.0.1:29092`, set `KAFKA_BOOTSTRAP` to change it).
+A call is `tool_call.failed` when the tool raised, returned an error, or answered with a known error text
+("No contact found", "Invalid date"). The two checking tools add their decision in `data.result`:
+`sensitive_content_scan` → `{"status": "blocked" | "review" | "clear", "finding_types": [...]}`,
+`tone_checker` → `{"matches_tone": ..., "score": ...}`. The result never contains the draft text.
 
 
 ## Project Integration
