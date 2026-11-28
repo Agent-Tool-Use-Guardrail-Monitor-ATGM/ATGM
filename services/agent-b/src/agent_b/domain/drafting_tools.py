@@ -10,6 +10,9 @@ from langchain.tools import tool
 
 from agent_b.adapters.agent_b_db import AgentBStore
 
+from langchain_core.tools import ToolException
+
+from agent_b.domain.guardrail import check_draft
 STORE = None
 
 
@@ -79,8 +82,13 @@ def save_draft(to: str, subject: str, body: str) -> str:
         subject: the subject of the email.
         body: the content of the email.
     """
+    blocked = check_draft(to, subject, body)
+    if blocked:
+        raise ToolException(f"Draft NOT saved, blocked by policy: {blocked}.")
     draft_id = store().save_draft(to, subject, body)
     return f"Draft saved with id {draft_id}"
 
+# Send a blocked draft back to the model as an error message instead of crashing the agent
+save_draft.handle_tool_error = True
 
 DRAFTING_TOOLS = [find_contact, get_current_datetime, get_free_slots, save_draft]
