@@ -1,3 +1,7 @@
+import os
+
+import pytest
+
 from agent_b.domain.agent import create_agent_b
 from agent_b.domain.drafting_tools import *
 from agent_b.domain.verification_tools import *
@@ -27,6 +31,7 @@ def test_agent_has_required_tools():
 def test_agent_is_created():
     assert create_agent_b("qwen3:1.7b") is not None
 
+@pytest.mark.skipif(not os.getenv("AGENT_B_LIVE"), reason="live test: needs Ollama; set AGENT_B_LIVE=1 to run it")
 def test_agent_calls_permitted_tools_on_normal_request():
     """Live test: needs a running Ollama model."""
     agent = create_agent_b("qwen3:1.7b")

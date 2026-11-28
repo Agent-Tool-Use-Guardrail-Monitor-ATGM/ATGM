@@ -42,7 +42,7 @@ def main() -> None:
     print("\nThe email drafting assistant agent has started.")
 
     env = os.environ.get
-    producer = Producer({"bootstrap.servers": env("KAFKA_BOOTSTRAP", "localhost:29092")})
+    producer = Producer({"bootstrap.servers": env("KAFKA_BOOTSTRAP", "127.0.0.1:29092")})  # not localhost: on Windows it tries IPv6 first
     topic = env("TOPIC_B", "tool-calls.B")
     run_id = str(uuid.uuid4())
 
@@ -50,7 +50,8 @@ def main() -> None:
         kafka_sink = KafkaSink(producer, topic)
         
         publisher = SessionEventPublisher(
-            kafka_sink, run_id=run_id, session_id=str(uuid.uuid4()), agent_id="B"
+            kafka_sink, run_id=run_id, session_id=str(uuid.uuid4()), agent_id="B",
+            tool_args={tool.name: set(tool.args) for tool in TOOLS},   # same argument filter as the scenario runs
         )
         publisher.start()
         try:

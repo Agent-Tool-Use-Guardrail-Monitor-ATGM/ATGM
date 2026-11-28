@@ -23,7 +23,7 @@ def main() -> None:
     env = os.environ.get
     parser = argparse.ArgumentParser(description="Publish saved events of Agent B to Kafka")
     parser.add_argument("file", help="Event file name in dataset/agent_b/events, e.g. 'events_for_scenario_01.jsonl'")
-    parser.add_argument("--bootstrap", default=env("KAFKA_BOOTSTRAP", "localhost:29092"))
+    parser.add_argument("--bootstrap", default=env("KAFKA_BOOTSTRAP", "127.0.0.1:29092"))
     parser.add_argument("--topic", default=env("TOPIC_B", "tool-calls.B"))
     parser.add_argument("--delay", type=float, default=0.0,
                         help="Seconds to wait between events (0 = as fast as possible)")

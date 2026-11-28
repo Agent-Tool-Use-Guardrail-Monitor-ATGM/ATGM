@@ -2,6 +2,10 @@
 
 Per user prompt (= session): session.started, one tool_call.completed /
 tool_call.failed per tool call, session.ended.
+A call counts as failed when the tool raised, returned an error, or answered with a
+known error text ("No contact found", "Invalid date"). The two checking tools also report
+their decision in data.result (scan status and finding types, tone match and score),
+never the draft text.
 
 Plug it into the agent through LangChain callbacks; events are sent at the
 moment a tool call finishes, with real measured timings.
@@ -23,6 +27,44 @@ from confluent_kafka import Producer
 from langchain_core.callbacks import BaseCallbackHandler
 
 SCHEMA_VERSION = "1.0"
+
+# Answers that mean a tool did not do its job, although it returned normally
+ERROR_ANSWERS = {
+    "find_contact": ("No contact found",),
+    "get_free_slots": ("Invalid date",),
+}
+
+
+def _content(output: Any) -> Any:
+    """The tool's answer: a ToolMessage's content (dict answers arrive as JSON text) or the raw value."""
+    content = getattr(output, "content", output)
+    if isinstance(content, str) and content[:1] == "{":
+        try:
+            return json.loads(content)
+        except ValueError:
+            return content
+    return content
+
+
+def answer_failed(tool_name: str, content: Any) -> bool:
+    """A normal-looking answer that is really a failure, e.g. 'No contact found'."""
+    if isinstance(content, str):
+        return content.startswith(ERROR_ANSWERS.get(tool_name, ()))
+    if isinstance(content, dict) and tool_name == "tone_checker":
+        return any(i.get("code") == "empty_draft" for i in content.get("issues", []))
+    return False
+
+
+def result_summary(tool_name: str, content: Any) -> dict | None:
+    """What the monitor may know about a tool's answer: decisions only, never draft text or secrets."""
+    if not isinstance(content, dict):
+        return None
+    if tool_name == "sensitive_content_scan":
+        return {"status": content.get("status"),
+                "finding_types": sorted({f.get("type") for f in content.get("findings", []) if f.get("type")})}
+    if tool_name == "tone_checker":
+        return {"matches_tone": content.get("matches_tone"), "score": content.get("score")}
+    return None
 
 log = logging.getLogger(__name__)
 
@@ -135,9 +177,12 @@ class SessionEventPublisher(BaseCallbackHandler):
         #print(f"\n[TOOL CALL] {name}({json.dumps(arguments, default=str)})")
 
     def on_tool_end(self, output: Any, *, run_id: UUID, **kwargs: Any) -> None:
-        content = getattr(output, "content", output)
-        #print(f"[TOOL RESULT] {content}")
-        self._finish(run_id, success=getattr(output, "status", "success") != "error")
+        content = _content(output)
+        with self._lock:
+            call = self._pending.get(run_id)
+            name = call["tool_name"] if call else ""
+        failed = getattr(output, "status", "success") == "error" or answer_failed(name, content)
+        self._finish(run_id, success=not failed, result=result_summary(name, content))
 
     def on_tool_error(self, error: BaseException, *, run_id: UUID, **kwargs: Any) -> None:
         #print(f"[TOOL ERROR] {type(error).__name__}: {error}")
@@ -145,17 +190,17 @@ class SessionEventPublisher(BaseCallbackHandler):
 
     # -- internals ---------------------------------------------------------
 
-    def _finish(self, run_id: UUID, *, success: bool) -> None:
+    def _finish(self, run_id: UUID, *, success: bool, result: dict | None = None) -> None:
         ended = time.monotonic()
         with self._lock:
             call = self._pending.pop(run_id, None)
             if call is None:
                 return
             self._last_end = ended
-        self._finished_call(call, success=success, ended=ended)
+        self._finished_call(call, success=success, ended=ended, result=result)
         self._publish_ready()
 
-    def _finished_call(self, call: dict, *, success: bool, ended: float) -> None:
+    def _finished_call(self, call: dict, *, success: bool, ended: float, result: dict | None = None) -> None:
         data = {
             "agent_id": self._agent_id,
             "tool_name": call["tool_name"],
@@ -165,6 +210,8 @@ class SessionEventPublisher(BaseCallbackHandler):
             "session_call_index": call["session_call_index"],
             "time_since_previous_call_ms": call["time_since_previous_call_ms"],
         }
+        if result is not None:
+            data["result"] = result
         with self._lock:
             self._finished[call["session_call_index"]] = data
 

@@ -8,10 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "langchain>=1.4.6",
     "langchain-ollama>=1.1.0",
-    "langchain-openai>=1.7.2",
     "python-dotenv>=1.2.4",
-    "pandas>=2.2",
-    "ucimlrepo>=0.0.7",
     "confluent-kafka>=2.16.1",
     "psycopg[binary]>=3.3.9",
 ]
@@ -31,3 +28,7 @@ module-root = "src"
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["src/agent_b/tests"]

@@ -33,6 +33,10 @@ on:
       run-tests:
         type: boolean
         default: true
+      build-image:
+        description: build (and on merge, push) a Docker image; false for services that have no Dockerfile
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -82,7 +86,7 @@ jobs:
   image:
     needs: test
     # run when tests passed or were not requested
-    if: ${{ !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
+    if: ${{ inputs.build-image && !cancelled() && (needs.test.result == 'success' || needs.test.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

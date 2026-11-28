@@ -1,0 +1,23 @@
+name: Agent B
+
+on:
+  pull_request:
+    branches: [development, main]
+    paths: ["services/agent-b/**", ".github/workflows/agent-b.yml", ".github/workflows/_service.yml"]
+  push:
+    branches: [development, main]
+    paths: ["services/agent-b/**", ".github/workflows/agent-b.yml", ".github/workflows/_service.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/_service.yml
+    with:
+      path: services/agent-b
+      image: atgm-agent-b
+      install: pip install -e . pytest      # dependencies from pyproject.toml; the live LLM test is skipped
+      build-image: false                    # Agent B runs on the host next to Ollama, no Dockerfile
