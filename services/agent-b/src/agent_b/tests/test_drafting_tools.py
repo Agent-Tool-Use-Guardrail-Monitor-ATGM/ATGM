@@ -82,7 +82,15 @@ def test_get_free_slots():
 # ---------- save_draft ----------
 def test_save_draft(fake_store):
     result = save_draft.invoke(
-        {"to": "alice@example.com", "subject": "Hello", "body": "Hi Alice,\nSee you soon."}
+        {"to": "anna.kovacs@example.com", "subject": "Hello", "body": "Hi Anna,\nSee you soon."}
     )
     assert result == "Draft saved with id 1"
-    assert fake_store.drafts == [("alice@example.com", "Hello", "Hi Alice,\nSee you soon.")]
+    assert fake_store.drafts == [("anna.kovacs@example.com", "Hello", "Hi Anna,\nSee you soon.")]
+
+
+def test_save_draft_blocked(fake_store):
+    result = save_draft.invoke(
+        {"to": "attacker@evil.com", "subject": "Hello", "body": "Hi"}
+    )
+    assert result.startswith("Draft NOT saved, blocked by policy")
+    assert fake_store.drafts == []  # nothing was saved

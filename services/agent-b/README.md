@@ -1,53 +1,85 @@
 # Agent B
 
-Agent B, aka Email Emilio is an email-drafting assistant with the following tools:
-- `tone_checker`, that checks whether the email's format adheres to the requested (or default) format, and 
-- `sensitive_content_scan`, that scans the email's content for sensitive data, like passwords, or JWT tokens,
-and alerts the user if any sensitive data was found.
+Agent B, aka Email Emilio, is an email-drafting assistant (LangChain + a local Ollama model) with six tools:
+- `find_contact`: looks up a contact's email, role and preferred tone,
+- `get_current_datetime` and `get_free_slots`: today's date and the user's free meeting slots,
+- `tone_checker`: checks whether the email matches the requested (or default) tone,
+- `sensitive_content_scan`: scans the email for sensitive data, like passwords or JWT tokens,
+- `save_draft`: saves the finished email as a draft.
+
+### Storage
+
+Contacts, free slots and saved drafts live in PostgreSQL (`agent_b_db`, tables `contacts`, `free_slots`, `drafts`).
+The tables are created and filled on first use. Check the saved drafts with:
+
+```bash
+docker compose exec postgres psql -U agent_b_svc -d agent_b_db -c "SELECT id, recipient, subject FROM drafts;"
+```
+
+### Guardrail
+
+Before `save_draft` saves anything, `domain/guardrail.py` checks the draft with deterministic rules and blocks it if:
+- the recipient is not one of the contacts,
+- the subject contains a line break (header injection, e.g. `Bcc:`),
+- the scan finds high-severity sensitive data (credentials, card numbers, ...).
+
+A blocked draft is not saved. The model gets the reason back as a tool error, and the call is published as
+`tool_call.failed`. The guardrail covers only some rules on purpose: wrong dates, wrong call order or too many
+calls get through, and the stream pipelines detect them.
+
+The guardrail is on by default. Turn it off for dataset generation, so the recorded sessions keep their violations:
+
+```bash
+AGENT_B_GUARDRAIL=off PYTHONPATH=src uv run python src/agent_b/main.py --prompt scenario_01_500.jsonl
+```
 
 ## Use in local environment
 
 ### Setup local environment
 
-```
-.../ATGM/services/agent-b/src/agent_b$ uv sync
+```bash
+cd services/agent-b
+uv sync
 ```
 
-Download Ollama from its [website](https://ollama.com/download)
+Download Ollama from its [website](https://ollama.com/download), then pull the model:
 
+```bash
+ollama pull qwen3:1.7b
 ```
-$ ollama pull qwen2.5:7b # or qwen2.5:1.5b, if there's not enough memory for qwen2.5:7b
---> then code should be adjusted in llm_client.py too
-```
+
+The stack must be running (`docker compose up -d` in the repo root), because the tools use `agent_b_db`
+and the events go to Kafka.
 
 ### Run in local environment
 
-For python environment choose `ATGM/services/agent-b/.venv/bin/python3`.
+For the Python environment in the IDE choose `ATGM/services/agent-b/.venv/bin/python3`.
 
-Run the agent with:
+Run the agent interactively (from `services/agent-b`):
 
-```
-.../ATGM/services/agent-b/src/agent_b$ python3 main.py
+```bash
+PYTHONPATH=src uv run python src/agent_b/main.py --model qwen3:1.7b
 ```
 
 ### Run tests in local environment
 
-```
-.../ATGM/services/agent-b$ uv run pytest
+```bash
+uv run pytest
 ```
 
-The live test (a real prompt to the model) is skipped by default. To include it, start Ollama and set
-`AGENT_B_LIVE=1` (PowerShell: `$env:AGENT_B_LIVE = "1"`); it takes a few minutes and can fail on a bad
-model answer. CI runs the other tests on every PR (`.github/workflows/agent-b.yml`).
+The tests use an in-memory store (`tests/conftest.py`), so they need no database. The live test (a real prompt
+to the model) is skipped by default. To include it, start Ollama and set `AGENT_B_LIVE=1`
+(PowerShell: `$env:AGENT_B_LIVE = "1"`); it takes a few minutes and can fail on a bad model answer.
+CI runs the other tests on every PR (`.github/workflows/agent-b.yml`).
 
 ### What the monitor receives
 
 One event per tool call on `tool-calls.B` (Kafka default `127.0.0.1:29092`, set `KAFKA_BOOTSTRAP` to change it).
 A call is `tool_call.failed` when the tool raised, returned an error, or answered with a known error text
-("No contact found", "Invalid date"). The two checking tools add their decision in `data.result`:
+("No contact found", "Invalid date"). A draft blocked by the guardrail is also `tool_call.failed`.
+The two checking tools add their decision in `data.result`:
 `sensitive_content_scan` → `{"status": "blocked" | "review" | "clear", "finding_types": [...]}`,
 `tone_checker` → `{"matches_tone": ..., "score": ...}`. The result never contains the draft text.
-
 
 ## Project Integration
 
@@ -55,18 +87,15 @@ A call is `tool_call.failed` when the tool raised, returned an error, or answere
 
 Event format: see the agent event schema (Teams chat).
 
-Suggested layout (ports & adapters):
+Layout (ports & adapters):
 
 ```
-domain/     agent logic and tools; no Kafka/DB imports
-adapters/   Kafka publisher, LLM client, database
+domain/     agent logic, tools and guardrail
+adapters/   Kafka publisher, agent_b_db store, fake data
 main.py     wires domain + adapters, reads config from environment variables
-Dockerfile
 ```
-
 
 **Owners:** Fanni, Ági
-
 
 ## Learning materials:
 - https://github.com/shaiqbhatti85/langchain-ollama-tool-agent
