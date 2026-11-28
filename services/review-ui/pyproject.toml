@@ -1,0 +1,21 @@
+[project]
+name = "review-ui"
+version = "0.1.0"
+description = "ATGM review UI: humans label the sessions that ACI sends to review"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+app = ["streamlit>=1.50,<2", "psycopg[binary]>=3.1", "confluent-kafka>=2.4"]   # the running page
+test = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

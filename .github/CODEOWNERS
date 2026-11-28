@@ -15,6 +15,7 @@
 /services/scenario-generator/                         @PappAron @ofanni03
 /services/mocks/                                      @PappAron
 /services/review-queue/                               @PappAron
+/services/review-ui/                                  @PappAron
 /services/storage-sink/                               @PappAron
 
 # Stream stages S01-S10
